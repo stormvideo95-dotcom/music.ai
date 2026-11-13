@@ -1015,4 +1015,27 @@
     <string name="taste_ai_mixes_done">Done! %1$d AI mixes in Library → Playlists</string>
     <string name="taste_ai_mixes_not_ready">Not enough data yet: %1$d of %2$d liked songs. Keep listening!</string>
     <string name="taste_ai_mix_prefix">AI mix: %1$s</string>
+    <string name="play_on">Play on</string>
+    <string name="play_on_this_phone">This phone</string>
+    <string name="play_on_playing_here">Playing here</string>
+    <string name="play_on_online">Online</string>
+    <string name="play_on_offline">Offline</string>
+    <string name="play_on_playing">Playing: %1$s</string>
+    <string name="play_on_paused">Paused: %1$s</string>
+    <string name="play_on_continue_here">Continue here</string>
+    <string name="play_on_not_paired">Pair this phone with your Pi to see your Mac here (Settings → Player and audio → Taste AI).</string>
+    <string name="play_on_chromecast">Chromecast</string>
+    <string name="play_on_chromecast_hint">Tap the cast icon to pick a TV or speaker</string>
+    <string name="play_on_failed">Could not reach that device</string>
+    <string name="play_on_no_devices">No other devices paired yet</string>
+    <string name="pair_this_phone">Pair this phone</string>
+    <string name="pair_this_phone_desc">Needed for Play on and Continue here</string>
+    <string name="pair_paired">Paired with your Pi</string>
+    <string name="pair_code_show">Type this code on a paired device: %1$s</string>
+    <string name="pair_add_device">Add a device</string>
+    <string name="pair_add_device_desc">Type the code your Mac shows</string>
+    <string name="pair_code">Pairing code</string>
+    <string name="pair_added">Device added!</string>
+    <string name="pair_wrong_code">Wrong or expired code</string>
+    <string name="pair_unpair">Unpair this phone</string>
 </resources>

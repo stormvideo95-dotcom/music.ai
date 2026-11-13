@@ -15,6 +15,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.metrolist.music.LocalDatabase
+import com.metrolist.music.LocalPlayerConnection
+import com.metrolist.music.tasteai.PairResult
 import com.metrolist.music.tasteai.AiMixes
 import com.metrolist.music.tasteai.PiState
 import com.metrolist.music.tasteai.PiStatusDot
@@ -63,6 +65,35 @@ fun TasteAiSettingsSection() {
     val piState by TasteAiStatus.state.collectAsStateWithLifecycle()
     var mixesText by remember { mutableStateOf<String?>(null) }
     var mixesBusy by remember { mutableStateOf(false) }
+    val deviceSync = LocalPlayerConnection.current?.service?.deviceSync
+    val paired by (deviceSync?.paired ?: kotlinx.coroutines.flow.MutableStateFlow(false)).collectAsStateWithLifecycle()
+    var pairText by remember { mutableStateOf<String?>(null) }
+    var pairBusy by remember { mutableStateOf(false) }
+    var showCodeDialog by remember { mutableStateOf(false) }
+    var addText by remember { mutableStateOf<String?>(null) }
+
+    if (showCodeDialog && deviceSync != null) {
+        TextFieldDialog(
+            title = { Text(stringResource(R.string.pair_add_device)) },
+            icon = { Icon(painterResource(R.drawable.devices), null) },
+            initialTextFieldValue = TextFieldValue(""),
+            placeholder = { Text(stringResource(R.string.pair_code)) },
+            keyboardType = KeyboardType.Number,
+            isInputValid = { it.trim().length == 6 && it.trim().all(Char::isDigit) },
+            onDone = { code ->
+                showCodeDialog = false
+                coroutineScope.launch {
+                    addText =
+                        when (deviceSync.approve(code)) {
+                            PairResult.PAIRED -> context.getString(R.string.pair_added)
+                            PairResult.WRONG_CODE -> context.getString(R.string.pair_wrong_code)
+                            PairResult.OFFLINE -> context.getString(R.string.taste_ai_test_fail)
+                        }
+                }
+            },
+            onDismiss = { showCodeDialog = false },
+        )
+    }
 
     LaunchedEffect(enabled, url) {
         while (true) {
@@ -150,6 +181,36 @@ fun TasteAiSettingsSection() {
                     title = { Text(stringResource(R.string.taste_ai_status)) },
                     description = { Text(piStateLabel(piState)) },
                     trailingContent = { PiStatusDot(piState) },
+                ),
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.smartphone),
+                    title = { Text(stringResource(if (paired) R.string.pair_paired else R.string.pair_this_phone)) },
+                    description = { Text(pairText ?: stringResource(R.string.pair_this_phone_desc)) },
+                    enabled = deviceSync != null && url.isNotBlank() && !pairBusy && !paired,
+                    onClick = {
+                        pairBusy = true
+                        coroutineScope.launch {
+                            val sync = deviceSync ?: return@launch
+                            val res = sync.pairStart(url)
+                            when {
+                                res == null -> pairText = context.getString(R.string.taste_ai_test_fail)
+                                res.approved -> pairText = null
+                                res.code != null && res.pairId != null -> {
+                                    pairText = context.getString(R.string.pair_code_show, res.code)
+                                    val ok = sync.pairWait(url, res.pairId)
+                                    pairText = if (ok) null else context.getString(R.string.pair_wrong_code)
+                                }
+                            }
+                            pairBusy = false
+                        }
+                    },
+                ),
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.laptop),
+                    title = { Text(stringResource(R.string.pair_add_device)) },
+                    description = { Text(addText ?: stringResource(R.string.pair_add_device_desc)) },
+                    enabled = deviceSync != null && paired,
+                    onClick = { showCodeDialog = true },
                 ),
                 Material3SettingsItem(
                     icon = painterResource(R.drawable.queue_music),

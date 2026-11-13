@@ -15,6 +15,7 @@ import json
 import math
 import os
 import random
+import secrets
 import re
 import sqlite3
 import threading
@@ -122,6 +123,163 @@ def train():
             json.dump(model, fh)
     new_events_since_train = 0
     print(f"[train] {len(rows)} events, {len(weights)} features, {len(clusters)} groups", flush=True)
+
+
+# ---------- Devices: pairing, now playing, "play on" commands ----------
+
+PAIR_CODE_TTL = 10 * 60
+ONLINE_WINDOW = 45  # seconds since last heartbeat to count as online
+devices_lock = threading.Condition()
+pair_requests = {}  # pairId -> {code, name, type, created, token}
+command_queues = {}  # deviceId -> [commands]
+
+
+def devices_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS devices (
+            id TEXT PRIMARY KEY,
+            token TEXT UNIQUE NOT NULL,
+            name TEXT,
+            type TEXT,
+            created INTEGER,
+            last_seen INTEGER,
+            state TEXT
+        )"""
+    )
+    return conn
+
+
+def device_count():
+    with db_lock:
+        conn = devices_db()
+        n = conn.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
+        conn.close()
+    return n
+
+
+def create_device(name, dtype):
+    device_id = secrets.token_hex(6)
+    token = secrets.token_urlsafe(24)
+    with db_lock:
+        conn = devices_db()
+        conn.execute(
+            "INSERT INTO devices (id, token, name, type, created, last_seen, state) VALUES (?,?,?,?,?,?,?)",
+            (device_id, token, (name or "Device")[:40], (dtype or "other")[:20], int(time.time()), int(time.time()), "{}"),
+        )
+        conn.commit()
+        conn.close()
+    return device_id, token
+
+
+def device_for_token(token):
+    if not token:
+        return None
+    with db_lock:
+        conn = devices_db()
+        row = conn.execute("SELECT id, name, type FROM devices WHERE token = ?", (token,)).fetchone()
+        conn.close()
+    return {"id": row[0], "name": row[1], "type": row[2]} if row else None
+
+
+def touch_device(device_id, state=None):
+    with db_lock:
+        conn = devices_db()
+        if state is None:
+            conn.execute("UPDATE devices SET last_seen = ? WHERE id = ?", (int(time.time()), device_id))
+        else:
+            conn.execute(
+                "UPDATE devices SET last_seen = ?, state = ? WHERE id = ?",
+                (int(time.time()), json.dumps(state)[:20000], device_id),
+            )
+        conn.commit()
+        conn.close()
+
+
+def list_devices(me):
+    now = int(time.time())
+    with db_lock:
+        conn = devices_db()
+        rows = conn.execute("SELECT id, name, type, last_seen, state FROM devices ORDER BY created").fetchall()
+        conn.close()
+    return [
+        {
+            "id": r[0],
+            "name": r[1],
+            "type": r[2],
+            "me": r[0] == me,
+            "online": now - (r[3] or 0) <= ONLINE_WINDOW,
+            "lastSeen": r[3],
+            "state": json.loads(r[4] or "{}"),
+        }
+        for r in rows
+    ]
+
+
+def remove_device(device_id):
+    with db_lock:
+        conn = devices_db()
+        conn.execute("DELETE FROM devices WHERE id = ?", (device_id,))
+        conn.commit()
+        conn.close()
+
+
+def pair_start(name, dtype):
+    """New device asks to join. The very first device is trusted right away."""
+    now = time.time()
+    with devices_lock:
+        for pid in [p for p, r in pair_requests.items() if now - r["created"] > PAIR_CODE_TTL]:
+            del pair_requests[pid]
+        if device_count() == 0:
+            device_id, token = create_device(name, dtype)
+            return {"approved": True, "token": token, "deviceId": device_id}
+        used = {r["code"] for r in pair_requests.values()}
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        while code in used:
+            code = f"{secrets.randbelow(1_000_000):06d}"
+        pair_id = secrets.token_urlsafe(12)
+        pair_requests[pair_id] = {"code": code, "name": name, "type": dtype, "created": now, "token": None, "deviceId": None}
+        return {"approved": False, "code": code, "pairId": pair_id, "expiresIn": PAIR_CODE_TTL}
+
+
+def pair_approve(code):
+    code = (code or "").strip().replace(" ", "")
+    now = time.time()
+    with devices_lock:
+        for r in pair_requests.values():
+            if r["code"] == code and r["token"] is None and now - r["created"] <= PAIR_CODE_TTL:
+                r["deviceId"], r["token"] = create_device(r["name"], r["type"])
+                devices_lock.notify_all()
+                return {"approved": True, "name": r["name"]}
+    return None
+
+
+def pair_status(pair_id):
+    with devices_lock:
+        r = pair_requests.get(pair_id)
+        if not r:
+            return {"approved": False, "expired": True}
+        if r["token"]:
+            del pair_requests[pair_id]
+            return {"approved": True, "token": r["token"], "deviceId": r["deviceId"]}
+        return {"approved": False, "expired": False}
+
+
+def push_command(target_id, command):
+    with devices_lock:
+        command_queues.setdefault(target_id, []).append(command)
+        devices_lock.notify_all()
+
+
+def wait_commands(device_id, timeout):
+    deadline = time.time() + timeout
+    with devices_lock:
+        while not command_queues.get(device_id):
+            left = deadline - time.time()
+            if left <= 0:
+                return []
+            devices_lock.wait(left)
+        return command_queues.pop(device_id, [])
 
 
 # ---------- Taste groups (AI mixes) ----------
@@ -401,7 +559,31 @@ class Handler(BaseHTTPRequestHandler):
             raise ValueError("too large")
         return json.loads(self.rfile.read(length) or b"{}")
 
+    def _device(self):
+        dev = device_for_token(self.headers.get("X-Device-Token"))
+        if not dev:
+            self._send(401, {"error": "not paired"})
+        return dev
+
     def do_GET(self):
+        path, _, query = self.path.partition("?")
+        params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+        if path == "/pair/status":
+            self._send(200, pair_status(params.get("pairId", "")))
+            return
+        if path == "/sync/devices":
+            dev = self._device()
+            if dev:
+                touch_device(dev["id"])
+                self._send(200, {"me": dev["id"], "devices": list_devices(dev["id"])})
+            return
+        if path == "/sync/commands":
+            dev = self._device()
+            if dev:
+                touch_device(dev["id"])
+                timeout = min(25.0, max(0.0, float(params.get("wait", "20"))))
+                self._send(200, {"commands": wait_commands(dev["id"], timeout)})
+            return
         if self.path == "/health":
             with model_lock:
                 self._send(200, {"ok": True, "events": model["events"], "trained": model["events"] >= MIN_EVENTS_TRAINED})
@@ -437,6 +619,34 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/train":
             train()
             self._send(200, {"ok": True})
+        elif self.path == "/pair/start":
+            self._send(200, pair_start(str(data.get("name") or "Device"), str(data.get("type") or "other")))
+        elif self.path == "/pair/approve":
+            if self._device():
+                result = pair_approve(str(data.get("code") or ""))
+                self._send(200 if result else 404, result or {"error": "wrong or expired code"})
+        elif self.path == "/sync/state":
+            dev = self._device()
+            if dev:
+                touch_device(dev["id"], data.get("state") or {})
+                self._send(200, {"ok": True})
+        elif self.path == "/sync/command":
+            dev = self._device()
+            if dev:
+                target = str(data.get("target") or "")
+                if not any(d["id"] == target for d in list_devices(dev["id"])):
+                    self._send(404, {"error": "unknown device"})
+                    return
+                command = data.get("command") or {}
+                command["from"] = dev["name"]
+                command["ts"] = int(time.time() * 1000)
+                push_command(target, command)
+                self._send(200, {"ok": True})
+        elif self.path == "/sync/unpair":
+            dev = self._device()
+            if dev:
+                remove_device(str(data.get("deviceId") or dev["id"]))
+                self._send(200, {"ok": True})
         else:
             self._send(404, {"error": "not found"})
 
@@ -445,6 +655,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    devices_db().close()
     if os.path.exists(MODEL_PATH):
         with open(MODEL_PATH) as fh:
             model.update(json.load(fh))

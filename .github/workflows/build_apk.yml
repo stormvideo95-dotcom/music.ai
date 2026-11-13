@@ -7,6 +7,7 @@ on:
     paths-ignore:
       - "**.md"
       - "taste-server/**"
+      - "mac-app/**"
 
 permissions:
   contents: write
@@ -36,7 +37,7 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew --console=plain :app:assembleFossDebug --warning-mode summary 2>&1 | tee build.log
+          ./gradlew --console=plain :app:assembleGmsDebug --warning-mode summary 2>&1 | tee build.log
         env:
           METROLIST_APPLICATION_ID: com.storm.musicai
           METROLIST_APP_NAME: Music AI

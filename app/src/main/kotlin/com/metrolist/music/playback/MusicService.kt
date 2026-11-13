@@ -199,6 +199,7 @@ import com.metrolist.music.playback.alarm.MusicAlarmStore
 import com.metrolist.music.playback.audio.SilenceDetectorAudioProcessor
 import com.metrolist.music.playback.queues.EmptyQueue
 import com.metrolist.music.playback.queues.ListQueue
+import com.metrolist.music.tasteai.DeviceSync
 import com.metrolist.music.tasteai.TasteAiManager
 import com.metrolist.music.playback.queues.Queue
 import com.metrolist.music.playback.queues.YouTubeQueue
@@ -346,6 +347,11 @@ class MusicService :
 
     private var currentQueue: Queue = EmptyQueue
     private val tasteAi by lazy { TasteAiManager(this, scope) }
+    val deviceSync by lazy {
+        DeviceSync(this, scope, { player }) { title, items, position ->
+            playQueue(ListQueue(title = title, items = items, startIndex = 0, position = position))
+        }
+    }
     var queueTitle: String? = null
 
     val currentMediaMetadata = MutableStateFlow<com.metrolist.music.models.MediaMetadata?>(null)
@@ -1188,6 +1194,7 @@ class MusicService :
             dataStore.data.map { it[AutoLoadMoreKey] ?: true }.distinctUntilChanged().collect { cachedAutoLoadMore = it }
         }
         tasteAi.start()
+        deviceSync.start()
         scope.launch {
             currentSong.collect { song -> tasteAi.onLikeState(song?.song?.let { s -> currentMediaMetadata.value?.takeIf { it.id == s.id } }, song?.song?.liked) }
         }

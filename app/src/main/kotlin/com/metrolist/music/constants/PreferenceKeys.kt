@@ -722,3 +722,5 @@ val CountryCodeToName =
 
 val TasteAiEnabledKey = booleanPreferencesKey("tasteAiEnabled")
 val TasteAiUrlKey = stringPreferencesKey("tasteAiUrl")
+val TasteAiDeviceTokenKey = stringPreferencesKey("tasteAiDeviceToken")
+val TasteAiDeviceNameKey = stringPreferencesKey("tasteAiDeviceName")
