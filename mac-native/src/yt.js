@@ -1,4 +1,6 @@
 // YouTube Music engine for Music AI (Mac): search, home, library, playlists and audio streams.
+import crypto from 'node:crypto';
+
 import { Innertube, Platform, UniversalCache } from 'youtubei.js';
 
 // youtubei.js needs a JS evaluator to decipher stream URLs.
@@ -16,10 +18,51 @@ let ytCookie = '';
 let preferredClient = null;
 const streamCache = new Map(); // videoId -> { url, expires, mime, client }
 
+const cookieValue = (cookie, name) => {
+  const m = cookie.match(new RegExp(`(?:^|;\\s*)${name.replace(/[$]/g, '\\$&')}=([^;]+)`));
+  return m ? m[1] : null;
+};
+
+/**
+ * YouTube Music checks that the auth hash was made for music.youtube.com.
+ * youtubei.js always signs for www.youtube.com, which makes YouTube Music treat us as signed out
+ * (empty library, empty liked songs). Re-sign those requests the way the YouTube Music website does.
+ */
+function musicAuthHeader(cookie, origin) {
+  const ts = Math.floor(Date.now() / 1000);
+  const hash = (sid) => crypto.createHash('sha1').update(`${ts} ${sid} ${origin}`).digest('hex');
+  const parts = [];
+  const sapisid = cookieValue(cookie, 'SAPISID') ?? cookieValue(cookie, '__Secure-3PAPISID');
+  const p1 = cookieValue(cookie, '__Secure-1PAPISID');
+  const p3 = cookieValue(cookie, '__Secure-3PAPISID');
+  if (sapisid) parts.push(`SAPISIDHASH ${ts}_${hash(sapisid)}`);
+  if (p1) parts.push(`SAPISID1PHASH ${ts}_${hash(p1)}`);
+  if (p3) parts.push(`SAPISID3PHASH ${ts}_${hash(p3)}`);
+  return parts.join(' ');
+}
+
+function makeFetch(cookie) {
+  return async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' ? input : input.url ?? String(input));
+    if (cookie && url.hostname === 'music.youtube.com') {
+      const headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
+      const origin = 'https://music.youtube.com';
+      headers.set('Authorization', musicAuthHeader(cookie, origin));
+      headers.set('Origin', origin);
+      headers.set('X-Origin', origin);
+      headers.set('Referer', `${origin}/`);
+      headers.set('Cookie', cookie);
+      init = { ...init, headers };
+    }
+    return fetch(input, init);
+  };
+}
+
 export async function getYt(cookie = ytCookie, cacheDir) {
   if (yt && cookie === ytCookie) return yt;
   ytCookie = cookie;
   yt = await Innertube.create({
+    fetch: makeFetch(cookie),
     cookie: cookie || undefined,
     retrieve_player: true,
     generate_session_locally: false,
@@ -224,11 +267,22 @@ export async function artist(id) {
 export async function library() {
   const y = await getYt();
   if (!y.session.logged_in) return { loggedIn: false, playlists: [] };
-  const lib = await y.music.getLibrary();
-  const playlists = [];
-  for (const section of lib.contents ?? []) {
-    for (const it of mapList(section.contents ?? section.items)) {
-      if (it.kind === 'playlist') playlists.push(it);
+  let lib = await y.music.getLibrary();
+  const collect = (l) => {
+    const out = [];
+    for (const section of l.contents ?? []) {
+      for (const it of mapList(section.contents ?? section.items)) {
+        if (it.kind === 'playlist' && !out.some((p) => p.id === it.id)) out.push(it);
+      }
+    }
+    return out;
+  };
+  let playlists = collect(lib);
+  if (!playlists.length && lib.filters?.length) {
+    const name = lib.filters.find((f) => /playlist/i.test(f));
+    if (name) {
+      lib = await lib.applyFilter(name);
+      playlists = collect(lib);
     }
   }
   if (!playlists.some((p) => p.id === 'LM' || p.id === 'VLLM')) {
@@ -339,6 +393,23 @@ export async function debugStreams(videoId) {
     } catch (e) {
       out.push(`${client}: ERROR ${e.message}`);
     }
+  }
+  return out;
+}
+
+/** Account check shown in Settings, so problems are visible instead of just "empty". */
+export async function diagnose() {
+  const y = await getYt();
+  const out = { signedIn: Boolean(y.session.logged_in) };
+  try {
+    out.library = (await library()).playlists.length;
+  } catch (e) {
+    out.library = `error: ${e.message}`;
+  }
+  try {
+    out.liked = (await y.music.getPlaylist('LM')).items?.length ?? 0;
+  } catch (e) {
+    out.liked = `error: ${e.message}`;
   }
   return out;
 }

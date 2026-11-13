@@ -128,6 +128,7 @@ function registerIpc() {
   ipcMain.handle('yt:library', safe(() => yt.library()));
   ipcMain.handle('yt:upnext', safe((id) => yt.upNext(id)));
   ipcMain.handle('yt:like', safe((id, liked) => yt.like(id, liked)));
+  ipcMain.handle('yt:diagnose', safe(() => yt.diagnose()));
   ipcMain.handle(
     'yt:stream',
     safe(async (id, refresh) => {
@@ -184,6 +185,22 @@ function registerIpc() {
 function registerStreamProtocol() {
   protocol.handle('musicai', async (request) => {
     const url = new URL(request.url);
+    if (url.hostname === 'img') {
+      // Album art proxied through the app so the UI can read its colors (dynamic color).
+      try {
+        const target = new URL(decodeURIComponent(url.pathname.slice(1)));
+        if (target.protocol !== 'https:' || !/(^|\.)(ytimg\.com|googleusercontent\.com|ggpht\.com)$/.test(target.hostname)) {
+          return new Response('blocked', { status: 403 });
+        }
+        const res = await net.fetch(target.href);
+        return new Response(res.body, {
+          status: res.status,
+          headers: { 'content-type': res.headers.get('content-type') ?? 'image/jpeg' },
+        });
+      } catch {
+        return new Response('bad image', { status: 400 });
+      }
+    }
     const id = decodeURIComponent(url.pathname.replace(/^\//, ''));
     if (url.hostname !== 'stream' || !id) return new Response('not found', { status: 404 });
     const headers = {};

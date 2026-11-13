@@ -14,18 +14,21 @@ const fmt = (sec) => {
 };
 const thumbOf = (item) => item?.thumb || (item?.id ? `https://i.ytimg.com/vi/${item.id}/hqdefault.jpg` : '');
 
-const ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
-const ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
-const ICON_SHUFFLE =
-  '<svg viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>';
-const ICON_LAPTOP =
-  '<svg viewBox="0 0 24 24"><path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/></svg>';
-const ICON_PHONE =
-  '<svg viewBox="0 0 24 24"><path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/></svg>';
-const ICON_HEART_FILLED =
-  '<svg viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>';
-const ICON_HEART =
-  '<svg viewBox="0 0 24 24"><path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/></svg>';
+const ms = (name, fill = false) => `<span class="ms${fill ? ' fill' : ''}">${name}</span>`;
+const ICON_PLAY = ms('play_arrow', true);
+const ICON_SHUFFLE = ms('shuffle');
+const ICON_LAPTOP = ms('laptop_mac');
+const ICON_PHONE = ms('smartphone');
+
+import {
+  Hct,
+  SchemeTonalSpot,
+  MaterialDynamicColors,
+  hexFromArgb,
+  argbFromRgb,
+  QuantizerCelebi,
+  Score,
+} from './vendor/mcu.js';
 
 let config = {};
 let piStatus = 'off';
@@ -244,6 +247,9 @@ audio.addEventListener('timeupdate', () => {
     bar.value = Math.round((audio.currentTime / d) * 1000);
     bar.style.setProperty('--fill', `${bar.value / 10}%`);
   }
+  $('#np-clip-rect').setAttribute('width', d ? String((audio.currentTime / d) * 600) : '0');
+  $('#np-time').textContent = fmt(audio.currentTime);
+  $('#np-dur').textContent = fmt(d);
 });
 bar.addEventListener('input', () => {
   seeking = true;
@@ -273,7 +279,11 @@ $('#p-repeat').onclick = () => {
 $('#p-like').onclick = () => player.toggleLike();
 $('#p-queue').onclick = () => $('#queue-panel').classList.toggle('hidden');
 $('#queue-close').onclick = () => $('#queue-panel').classList.add('hidden');
-$('#p-art').onclick = () => $('#nowplaying').classList.remove('hidden');
+$('#p-art').onclick = () => {
+  $('#nowplaying').classList.remove('hidden');
+  drawWave();
+  startWave();
+};
 $('#np-close').onclick = () => $('#nowplaying').classList.add('hidden');
 
 document.addEventListener('keydown', (e) => {
@@ -286,13 +296,16 @@ document.addEventListener('keydown', (e) => {
 });
 
 function renderPlayState() {
-  $('#p-play').innerHTML = audio.paused ? ICON_PLAY : ICON_PAUSE;
+  $('#p-play-icon').textContent = audio.paused ? 'play_arrow' : 'pause';
+  $('#p-play').classList.toggle('playing', !audio.paused);
+  $('#np-art-wrap').classList.toggle('playing', !audio.paused);
+  if (!audio.paused) startWave();
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
 }
 
 function renderLike() {
   const liked = player.current && player.liked.has(player.current.id);
-  $('#p-like').innerHTML = liked ? ICON_HEART_FILLED : ICON_HEART;
+  $('#p-like').innerHTML = ms('favorite', Boolean(liked));
   $('#p-like').classList.toggle('on', Boolean(liked));
 }
 
@@ -342,41 +355,110 @@ function updateMediaSession() {
   navigator.mediaSession.setActionHandler('previoustrack', () => player.prev());
 }
 
-// Album-color accent, like the phone app's dynamic colors.
+// Dynamic color (Material 3): build a full color scheme from the album art.
+const ROLES = {
+  primary: 'primary',
+  onPrimary: 'on-primary',
+  primaryContainer: 'primary-container',
+  onPrimaryContainer: 'on-primary-container',
+  secondaryContainer: 'secondary-container',
+  onSecondaryContainer: 'on-secondary-container',
+  tertiary: 'tertiary',
+  tertiaryContainer: 'tertiary-container',
+  onTertiaryContainer: 'on-tertiary-container',
+  surface: 'surface',
+  surfaceContainerLowest: 'surface-container-lowest',
+  surfaceContainerLow: 'surface-container-low',
+  surfaceContainer: 'surface-container',
+  surfaceContainerHigh: 'surface-container-high',
+  surfaceContainerHighest: 'surface-container-highest',
+  onSurface: 'on-surface',
+  onSurfaceVariant: 'on-surface-variant',
+  outline: 'outline',
+  outlineVariant: 'outline-variant',
+  inverseSurface: 'inverse-surface',
+  inverseOnSurface: 'inverse-on-surface',
+};
+
+function applyScheme(sourceArgb) {
+  const scheme = new SchemeTonalSpot(Hct.fromInt(sourceArgb), true, 0);
+  const root = document.documentElement.style;
+  for (const [role, cssName] of Object.entries(ROLES)) {
+    const color = MaterialDynamicColors[role];
+    if (color) root.setProperty(`--md-${cssName}`, hexFromArgb(color.getArgb(scheme)));
+  }
+}
+
 function applyAccent(src) {
+  if (!src) return;
   const img = new Image();
-  img.crossOrigin = 'anonymous';
   img.onload = () => {
     try {
       const c = document.createElement('canvas');
-      c.width = c.height = 24;
+      c.width = c.height = 64;
       const ctx = c.getContext('2d');
-      ctx.drawImage(img, 0, 0, 24, 24);
-      const d = ctx.getImageData(0, 0, 24, 24).data;
-      let best = null;
-      let bestScore = -1;
-      for (let i = 0; i < d.length; i += 4) {
-        const [r, g, b] = [d[i], d[i + 1], d[i + 2]];
-        const max = Math.max(r, g, b);
-        const min = Math.min(r, g, b);
-        const sat = max ? (max - min) / max : 0;
-        const score = sat * 0.7 + (max / 255) * 0.3;
-        if (max > 90 && score > bestScore) {
-          bestScore = score;
-          best = [r, g, b];
-        }
-      }
-      if (!best) return;
-      const lift = (v) => Math.min(255, Math.round(v + (255 - v) * 0.35));
-      const [r, g, b] = best.map(lift);
-      document.documentElement.style.setProperty('--accent', `rgb(${r}, ${g}, ${b})`);
-      document.documentElement.style.setProperty('--accent-soft', `rgba(${r}, ${g}, ${b}, 0.16)`);
-    } catch {
-      /* image not readable, keep accent */
+      ctx.drawImage(img, 0, 0, 64, 64);
+      const d = ctx.getImageData(0, 0, 64, 64).data;
+      const pixels = [];
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 250) pixels.push(argbFromRgb(d[i], d[i + 1], d[i + 2]));
+      const ranked = Score.score(QuantizerCelebi.quantize(pixels, 128));
+      if (ranked.length) applyScheme(ranked[0]);
+    } catch (err) {
+      console.warn('dynamic color failed', err);
     }
   };
-  img.src = src;
+  // Loaded through the app so the canvas may read it.
+  img.src = `musicai://img/${encodeURIComponent(src)}`;
 }
+
+// Expressive "cookie" shapes for the hero artwork and AI mix covers.
+function cookiePath(points, depth) {
+  const steps = 360;
+  let d = '';
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * Math.PI * 2;
+    const r = 0.5 - depth + depth * Math.cos(points * a);
+    const x = 0.5 + r * Math.cos(a);
+    const y = 0.5 + r * Math.sin(a);
+    d += `${i ? 'L' : 'M'}${x.toFixed(4)},${y.toFixed(4)}`;
+  }
+  return `${d}Z`;
+}
+$('#cookie-path').setAttribute('d', cookiePath(9, 0.035));
+$('#cookie-big-path').setAttribute('d', cookiePath(12, 0.022));
+
+// Wavy progress in Now Playing (moves while playing, flat when paused).
+let wavePhase = 0;
+let waveRunning = false;
+function drawWave() {
+  const amp = audio.paused ? 0 : 4;
+  let d = '';
+  for (let x = 0; x <= 600; x += 6) {
+    const y = 12 + amp * Math.sin((x / 600) * Math.PI * 2 * 14 + wavePhase);
+    d += `${x ? 'L' : 'M'}${x},${y.toFixed(2)}`;
+  }
+  $('#np-wave-path').setAttribute('d', d);
+}
+function startWave() {
+  if (waveRunning) return;
+  waveRunning = true;
+  const tick = () => {
+    if ($('#nowplaying').classList.contains('hidden') || audio.paused) {
+      waveRunning = false;
+      drawWave();
+      return;
+    }
+    wavePhase -= 0.08;
+    drawWave();
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+$('#np-wave').addEventListener('click', (e) => {
+  const rect = e.currentTarget.getBoundingClientRect();
+  const d = audio.duration || 0;
+  if (d) audio.currentTime = ((e.clientX - rect.left) / rect.width) * d;
+});
 
 // ======================================================================
 // Pi: status, state heartbeat, commands, Play on
@@ -447,7 +529,7 @@ popup.addEventListener('click', (e) => e.stopPropagation());
 document.addEventListener('click', () => popup.classList.add('hidden'));
 
 async function renderDevices() {
-  popup.innerHTML = '<div class="title">Play on</div><div class="spinner"></div>';
+  popup.innerHTML = '<div class="title">Play on</div><div class="loader"></div>';
   const data = config.paired ? await api.invoke('pi:devices').catch(() => null) : null;
   const others = (data?.devices ?? []).filter((d) => !d.me);
   let html = `<div class="title">Play on</div>
@@ -522,7 +604,7 @@ document.addEventListener('mouseup', (e) => {
   }
 });
 
-const loading = () => (view.innerHTML = '<div class="spinner"></div>');
+const loading = () => (view.innerHTML = '<div class="loader"></div>');
 const showError = (err) =>
   (view.innerHTML = `<div class="empty">Something went wrong: ${esc(err?.message ?? err)}<br/><br/><button class="btn" id="retry">Try again</button></div>`) &&
   ($('#retry').onclick = () => go(route.name, route.arg, false));
@@ -594,7 +676,7 @@ function tracksHtml(items) {
       (t, i) => `<div class="track ${t.id === playing ? 'playing' : ''}" data-i="${i}" data-id="${esc(t.id)}">
       <div class="num">${i + 1}</div>
       <img src="${esc(thumbOf(t))}" alt="" loading="lazy" />
-      <div><div class="ellipsis">${esc(t.title)}</div><div class="ellipsis muted" style="font-size:12.5px">${esc(t.subtitle)}</div></div>
+      <div><div class="ellipsis t1">${esc(t.title)}</div><div class="ellipsis muted" style="font-size:13px">${esc(t.subtitle)}</div></div>
       <div class="ellipsis muted col-album">${esc(t.album ?? '')}</div>
       <div class="dur">${t.duration ? fmt(t.duration) : ''}</div>
     </div>`,
@@ -626,7 +708,7 @@ let lastQuery = '';
 function renderSearch() {
   view.innerHTML = `<h1>Search</h1>
     <div class="search-box">
-      <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <span class="ms">search</span>
       <input id="q" placeholder="Songs, artists, albums, playlists" value="${esc(lastQuery)}" autofocus />
       <div class="suggestions hidden" id="sugg"></div>
     </div>
@@ -639,7 +721,7 @@ function renderSearch() {
     if (!q.trim()) return;
     lastQuery = q;
     const results = $('#results');
-    results.innerHTML = '<div class="spinner"></div>';
+    results.innerHTML = '<div class="loader"></div>';
     try {
       const shelves = await api.invoke('yt:search', q);
       if (route.name !== 'search') return;
@@ -660,9 +742,12 @@ function renderSearch() {
     timer = setTimeout(async () => {
       const list = await api.invoke('yt:suggest', q).catch(() => []);
       if (input.value !== q || !list.length) return;
-      sugg.innerHTML = list.map((s) => `<div>${esc(s)}</div>`).join('');
+      sugg.innerHTML = list.map((s) => `<div><span class="ms muted">search</span><span>${esc(s)}</span></div>`).join('');
       sugg.classList.remove('hidden');
-      sugg.querySelectorAll('div').forEach((d) => (d.onclick = () => ((input.value = d.textContent), run(d.textContent))));
+      sugg.querySelectorAll(':scope > div').forEach((d) => {
+        const q2 = d.lastElementChild.textContent;
+        d.onclick = () => ((input.value = q2), run(q2));
+      });
     }, 220);
   });
   input.focus();
@@ -680,7 +765,8 @@ async function renderLibrary() {
       $('#login').onclick = () => api.invoke('auth:login');
       return;
     }
-    view.innerHTML = `<h1>Library</h1><div class="grid">${lib.playlists.map(cardHtml).join('')}</div>`;
+    view.innerHTML = `<h1>Library</h1><div class="grid">${lib.playlists.map(cardHtml).join('')}</div>
+      ${lib.playlists.length <= 1 ? '<div class="empty">Only a few playlists showed up. Settings → Account check tells you what YouTube Music answered.</div>' : ''}`;
     bindCards(view, lib.playlists);
   } catch (err) {
     showError(err);
@@ -711,8 +797,8 @@ function collectionHtml(kind, data, coverHtml) {
       ${coverHtml}
       <div><div class="kind">${kind}</div><h1>${esc(data.title)}</h1><div class="muted">${esc(data.subtitle ?? '')}</div>
       <div class="actions">
-        <button class="btn primary" id="play-all">${ICON_PLAY} Play</button>
-        <button class="btn" id="shuffle-all">${ICON_SHUFFLE} Shuffle</button>
+        <button class="btn primary large" id="play-all">${ICON_PLAY} Play</button>
+        <button class="btn large" id="shuffle-all">${ICON_SHUFFLE} Shuffle</button>
       </div></div>
     </div>
     <div class="tracks" id="track-list">${tracksHtml(data.items)}</div>`;
@@ -757,7 +843,7 @@ async function renderArtist(id) {
   try {
     const data = await api.invoke('yt:artist', id);
     if (route.arg !== id) return;
-    view.innerHTML = `<div class="page-head"><img src="${esc(data.thumb ?? '')}" alt="" style="border-radius:50%" />
+    view.innerHTML = `<div class="page-head"><img class="round" src="${esc(data.thumb ?? '')}" alt="" />
       <div><div class="kind">Artist</div><h1>${esc(data.title)}</h1></div></div>${shelvesHtml(data.sections)}`;
     bindShelves(data.sections);
   } catch (err) {
@@ -846,7 +932,18 @@ async function renderSettings() {
     <div class="settings-group">
       <div class="setting"><div class="info"><div class="label">${config.loggedIn ? 'Signed in' : 'Not signed in'}</div><div class="desc">Your playlists and likes come from your YouTube Music account</div></div>
         ${config.loggedIn ? '<button class="btn" id="s-logout">Sign out</button>' : '<button class="btn primary" id="s-login">Sign in</button>'}</div>
+      <div class="setting"><div class="info"><div class="label">Account check</div><div class="desc" id="s-diag">Checks what YouTube Music sends back for your library and liked songs</div></div>
+        <button class="btn" id="s-diag-run">Check</button></div>
     </div>`;
+  $('#s-diag-run').onclick = async () => {
+    $('#s-diag').textContent = 'Checking…';
+    try {
+      const r = await api.invoke('yt:diagnose');
+      $('#s-diag').textContent = `Signed in: ${r.signedIn ? 'yes' : 'no'} · Playlists: ${r.library} · Liked songs: ${r.liked}`;
+    } catch (err) {
+      $('#s-diag').textContent = `Check failed: ${err.message}`;
+    }
+  };
 
   $('#s-url-save').onclick = async () => {
     await api.invoke('config:set', { serverUrl: $('#s-url').value.trim() });
