@@ -1,0 +1,12 @@
+services:
+  music-ai-taste:
+    build: .
+    container_name: music-ai-taste
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./data:/data
+    environment:
+      - TZ=Europe/Brussels
+      - HALF_LIFE_DAYS=14

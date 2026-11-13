@@ -1,0 +1,67 @@
+name: Build Music AI APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths-ignore:
+      - "**.md"
+      - "taste-server/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build APK
+        run: |
+          chmod +x gradlew
+          ./gradlew --console=plain :app:assembleFossDebug --warning-mode summary
+        env:
+          METROLIST_APPLICATION_ID: com.storm.musicai
+          METROLIST_APP_NAME: Music AI
+          METROLIST_BUILD_COMMIT: ${{ github.sha }}
+          GRADLE_OPTS: -Xmx4g
+
+      - name: Rename APK
+        run: |
+          find app/build/outputs/apk -name "*.apk"
+          APK=$(find app/build/outputs/apk -name "*universal*.apk" | head -n 1)
+          [ -z "$APK" ] && APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          echo "Found $APK"
+          mkdir -p out
+          cp "$APK" out/MusicAI-build-${{ github.run_number }}.apk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: MusicAI-apk
+          path: out/*.apk
+
+      - name: Publish release (easy phone download)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Music AI build ${{ github.run_number }}
+          body: Install this APK on your phone. Same signature every build, so it updates over the old one.
+          files: out/*.apk
+          make_latest: true
