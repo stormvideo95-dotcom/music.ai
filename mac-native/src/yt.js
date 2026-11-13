@@ -305,6 +305,35 @@ export async function resolveStream(videoId) {
   throw lastError ?? new Error('No playable stream');
 }
 
+/** Debug helper for the CI smoke test: what does each client say? */
+export async function debugStreams(videoId) {
+  const y = await getYt();
+  const out = [];
+  for (const client of STREAM_CLIENTS) {
+    try {
+      const info = client === 'YTMUSIC' ? await y.music.getInfo(videoId) : await y.getBasicInfo(videoId, { client });
+      const ps = info.playability_status;
+      const formats = info.streaming_data?.adaptive_formats?.length ?? 0;
+      let urlStatus = '-';
+      if (formats) {
+        try {
+          const f = info.chooseFormat({ type: 'audio', quality: 'best', format: 'any' });
+          const url = await f.decipher(y.session.player);
+          const r1 = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
+          const r2 = await fetch(url, { headers: { Range: 'bytes=2000000-2001000' } });
+          urlStatus = `${r1.status}/${r2.status}`;
+        } catch (e) {
+          urlStatus = `decipher error: ${e.message}`;
+        }
+      }
+      out.push(`${client}: ${ps?.status} ${ps?.reason ?? ''} formats=${formats} url=${urlStatus}`);
+    } catch (e) {
+      out.push(`${client}: ERROR ${e.message}`);
+    }
+  }
+  return out;
+}
+
 export function forgetStream(videoId) {
   streamCache.delete(videoId);
 }

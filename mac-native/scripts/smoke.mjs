@@ -32,6 +32,7 @@ if (album) await check('album', async () => `${(await yt.album(album.id)).items.
 if (playlist) await check('playlist', async () => `${(await yt.playlist(playlist.id)).items.length} tracks`);
 if (song) {
   await check('upNext', async () => `${(await yt.upNext(song.id)).length} songs`);
+  for (const line of await yt.debugStreams(song.id)) log('client', line);
   await check('stream (app order)', async () => {
     const s = await yt.resolveStream(song.id);
     // also test a later part of the file (catches streams that die after 1 MB)
