@@ -1,6 +1,6 @@
 :root {
-  --accent: #e3c56b;
-  --accent-soft: rgba(227, 197, 107, 0.16);
+  --accent: #f2507a;
+  --accent-soft: rgba(242, 80, 122, 0.16);
   --bg: rgba(20, 20, 18, 0.82);
   --bg-solid: #151513;
   --panel: rgba(255, 255, 255, 0.05);
@@ -97,13 +97,8 @@ button {
 }
 
 .brand-logo {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: var(--accent);
-  color: #1a1a14;
+  width: 34px;
+  height: 34px;
 }
 
 .brand-logo svg {
