@@ -114,20 +114,49 @@ export async function home() {
     .filter((s) => s.items.length);
 }
 
+function collectShelfItems(nodes, out = []) {
+  for (const node of nodes ?? []) {
+    if (!node) continue;
+    if (node.type === 'MusicShelf' || node.type === 'Shelf') out.push(...(node.contents ?? []));
+    else if (node.type === 'MusicCardShelf') out.push(...(node.contents ?? []));
+    else if (node.type === 'ItemSection' || node.type === 'SectionList') collectShelfItems(node.contents, out);
+    else if (node.type === 'MusicResponsiveListItem' || node.type === 'MusicTwoRowItem') out.push(node);
+  }
+  return out;
+}
+
+const SEARCH_GROUPS = [
+  ['Songs', 'song'],
+  ['Albums', 'album'],
+  ['Artists', 'artist'],
+  ['Playlists', 'playlist'],
+  ['Videos', 'video'],
+];
+
 export async function search(query) {
   const y = await getYt();
-  const res = await y.music.search(query);
+  // One filtered search per type: works no matter how YouTube names or orders the shelves.
+  const results = await Promise.allSettled(
+    SEARCH_GROUPS.map(([, type]) => y.music.search(query, { type })),
+  );
   const shelves = [];
-  const add = (title, shelf) => {
-    const items = mapList(shelf?.contents);
-    if (items.length) shelves.push({ title, items });
-  };
-  add('Songs', res.songs);
-  add('Albums', res.albums);
-  add('Artists', res.artists);
-  add('Playlists', res.playlists);
-  add('Videos', res.videos);
+  results.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return;
+    const [title, type] = SEARCH_GROUPS[i];
+    let items = mapList(collectShelfItems(r.value.contents));
+    if (type === 'video') items = items.map((it) => ({ ...it, kind: 'song' }));
+    else if (type === 'song') items = items.filter((it) => it.kind === 'song');
+    else items = items.filter((it) => it.kind === type || (type === 'artist' && it.kind === 'library_artist'));
+    if (items.length) shelves.push({ title, items: items.slice(0, type === 'song' ? 20 : 12) });
+  });
   return shelves;
+}
+
+/** Debug helper for the CI smoke test. */
+export async function searchDebug(query) {
+  const y = await getYt();
+  const res = await y.music.search(query, { type: 'song' });
+  return (res.contents ?? []).map((c) => `${c.type}(${(c.contents ?? []).length}: ${(c.contents ?? []).slice(0, 2).map((x) => `${x.type}/${x.item_type}/${x.id}`).join(',')})`);
 }
 
 export async function suggestions(query) {

@@ -16,6 +16,7 @@ const check = async (name, fn) => {
 };
 
 await yt.getYt('');
+await check('search structure', async () => (await yt.searchDebug('daft punk get lucky')).join(' ; '));
 const shelves = await check('search', async () => {
   const s = await yt.search('daft punk get lucky');
   if (!s.length) throw new Error('no results');
