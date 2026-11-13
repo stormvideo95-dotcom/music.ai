@@ -35,7 +35,8 @@ jobs:
       - name: Build APK
         run: |
           chmod +x gradlew
-          ./gradlew --console=plain :app:assembleFossDebug --warning-mode summary
+          set -o pipefail
+          ./gradlew --console=plain :app:assembleFossDebug --warning-mode summary 2>&1 | tee build.log
         env:
           METROLIST_APPLICATION_ID: com.storm.musicai
           METROLIST_APP_NAME: Music AI
@@ -65,3 +66,11 @@ jobs:
           body: Install this APK on your phone. Same signature every build, so it updates over the old one.
           files: out/*.apk
           make_latest: true
+
+      - name: Share build errors (readable without login)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          { grep -E "^e: |error:|FAILURE|What went wrong" -A3 build.log | head -150; echo; tail -60 build.log; } > errors.txt || tail -200 build.log > errors.txt
+          gh release create "failed-${{ github.run_number }}" --prerelease --title "Build ${{ github.run_number }} failed" --notes-file errors.txt --target "${{ github.sha }}"
