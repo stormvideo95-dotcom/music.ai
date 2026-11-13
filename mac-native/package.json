@@ -1,0 +1,36 @@
+{
+  "name": "music-ai-mac",
+  "productName": "Music AI",
+  "version": "1.0.0",
+  "description": "Music AI for Mac: YouTube Music with Storm's own taste AI",
+  "author": "Storm Gees",
+  "license": "GPL-3.0",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "node scripts/smoke.mjs",
+    "dist": "electron-builder --mac dmg:arm64 dmg:x64 -p never"
+  },
+  "dependencies": {
+    "youtubei.js": "^18.3.0"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.storm.musicai",
+    "productName": "Music AI",
+    "files": ["src/**/*", "package.json"],
+    "directories": { "output": "pack", "buildResources": "build" },
+    "mac": {
+      "identity": "-",
+      "category": "public.app-category.music",
+      "icon": "build/icon.png",
+      "target": ["dmg"],
+      "darkModeSupport": true
+    },
+    "dmg": { "title": "Music AI" }
+  }
+}

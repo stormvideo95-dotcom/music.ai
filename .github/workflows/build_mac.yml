@@ -5,7 +5,7 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "mac-app/**"
+      - "mac-native/**"
       - ".github/workflows/build_mac.yml"
 
 permissions:
@@ -18,10 +18,10 @@ concurrency:
 jobs:
   build:
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 45
     defaults:
       run:
-        working-directory: mac-app
+        working-directory: mac-native
 
     steps:
       - uses: actions/checkout@v4
@@ -30,18 +30,20 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Install pnpm
-        run: npm i -g pnpm@latest
+      - name: Install
+        run: npm ci
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile 2>&1 | tee ../install.log
-
-      - name: Build
+      - name: Smoke test YouTube engine (search, playlists, audio stream)
+        id: smoke
+        continue-on-error: true
         run: |
           set -o pipefail
-          pnpm clean || true
-          pnpm build 2>&1 | tee ../build.log
-          pnpm electron-builder --mac dmg:arm64 dmg:x64 -p never 2>&1 | tee -a ../build.log
+          npm run smoke 2>&1 | tee ../smoke.log
+
+      - name: Build DMGs
+        run: |
+          set -o pipefail
+          npm run dist 2>&1 | tee ../build.log
 
       - name: Collect DMGs
         run: |
@@ -53,17 +55,23 @@ jobs:
               *) cp "$f" "../out/MusicAI-Mac-Intel-${{ github.run_number }}.dmg" ;;
             esac
           done
-          ls -la ../out
+          {
+            echo "Apple Silicon (M1/M2/M3/M4) → MusicAI-Mac-AppleSilicon. Older Intel Macs → MusicAI-Mac-Intel."
+            echo
+            echo 'First open: right-click the app → Open. If macOS says it is damaged: xattr -cr "/Applications/Music AI.app"'
+            echo
+            echo "Engine smoke test:"
+            echo '```'
+            grep "\[smoke\]\|SMOKE_RESULT" ../smoke.log | cut -c1-300 || echo "no smoke output"
+            echo '```'
+          } > ../notes.md
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: mac-build-${{ github.run_number }}
-          name: Music AI for Mac build ${{ github.run_number }}
-          body: |
-            Apple Silicon (M1/M2/M3/M4) → MusicAI-Mac-AppleSilicon. Older Intel Macs → MusicAI-Mac-Intel.
-            First open: right-click the app → Open. If macOS says it is damaged, run in Terminal:
-            xattr -cr "/Applications/Music AI.app"
+          tag_name: mac-pro-${{ github.run_number }}
+          name: Music AI for Mac (Pro) build ${{ github.run_number }}
+          body_path: notes.md
           files: out/*.dmg
           make_latest: false
 
@@ -73,5 +81,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          { tail -80 install.log 2>/dev/null; echo ----; grep -iE "error|failed" -A3 build.log 2>/dev/null | head -120; echo ----; tail -60 build.log 2>/dev/null; } > errors.txt
-          gh release create "mac-failed-${{ github.run_number }}" --prerelease --title "Mac build ${{ github.run_number }} failed" --notes-file errors.txt --target "${{ github.sha }}"
+          { tail -40 smoke.log 2>/dev/null; echo ----; grep -iE "error|failed" -A3 build.log 2>/dev/null | head -100; echo ----; tail -50 build.log 2>/dev/null; } > errors.txt
+          gh release create "mac-pro-failed-${{ github.run_number }}" --prerelease --title "Mac Pro build ${{ github.run_number }} failed" --notes-file errors.txt --target "${{ github.sha }}"
