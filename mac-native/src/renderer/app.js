@@ -83,11 +83,24 @@ const player = {
     } catch (err) {
       if (token !== this.loadToken) return;
       console.error(err);
+      if (String(err?.message).includes('SIGN_IN_REQUIRED')) {
+        audio.pause();
+        toast('YouTube wants you to sign in first');
+        if (!config.loggedIn) go('settings');
+        return;
+      }
+      this.failStreak = (this.failStreak ?? 0) + 1;
+      if (this.failStreak >= 3) {
+        this.failStreak = 0;
+        toast("Can't play songs right now. Check your internet or sign in.");
+        return;
+      }
       toast(`Can't play "${track.title}" — skipping`);
       setTimeout(() => this.next(true), 800);
       return;
     }
     this.started = Date.now();
+    this.failStreak = 0;
     this.recent = [...this.recent.filter((id) => id !== track.id), track.id].slice(-50);
     updateMediaSession();
     void sendState();

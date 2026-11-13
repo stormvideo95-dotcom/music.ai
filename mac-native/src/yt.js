@@ -263,6 +263,12 @@ async function tryClient(y, videoId, client) {
     client === 'YTMUSIC'
       ? await y.music.getInfo(videoId)
       : await y.getBasicInfo(videoId, { client });
+  const ps = info.playability_status;
+  if (ps?.status === 'LOGIN_REQUIRED') {
+    const err = new Error(`SIGN_IN_REQUIRED: ${ps.reason ?? ''}`);
+    err.signIn = true;
+    throw err;
+  }
   const format = info.chooseFormat({ type: 'audio', quality: 'best', format: 'any' });
   const url = await format.decipher(y.session.player);
   if (!url) throw new Error('no url');
@@ -286,6 +292,7 @@ export async function resolveStream(videoId) {
     ? [preferredClient, ...STREAM_CLIENTS.filter((c) => c !== preferredClient)]
     : STREAM_CLIENTS;
   let lastError = null;
+  let signIn = false;
   for (const client of order) {
     try {
       const stream = await tryClient(y, videoId, client);
@@ -300,8 +307,10 @@ export async function resolveStream(videoId) {
       return entry;
     } catch (err) {
       lastError = err;
+      if (err?.signIn) signIn = true;
     }
   }
+  if (signIn && !isLoggedIn()) throw new Error('SIGN_IN_REQUIRED');
   throw lastError ?? new Error('No playable stream');
 }
 
