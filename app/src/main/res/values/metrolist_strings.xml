@@ -1004,4 +1004,15 @@
     <string name="taste_ai_test_checking">Checking…</string>
     <string name="taste_ai_test_ok">Connected. %1$d events learned, model trained: %2$s</string>
     <string name="taste_ai_test_fail">Can\'t reach the server. Check the address and that you\'re on the same network or Tailscale.</string>
+    <string name="taste_ai_pi_online">Pi connected</string>
+    <string name="taste_ai_pi_offline">Pi offline</string>
+    <string name="taste_ai_pi_off">Taste AI is off</string>
+    <string name="taste_ai_status">Pi status</string>
+    <string name="taste_ai_mixes">AI mixes</string>
+    <string name="taste_ai_mixes_refresh">Refresh AI mixes</string>
+    <string name="taste_ai_mixes_desc">Make 2 to 4 playlists from the music styles you listen to</string>
+    <string name="taste_ai_mixes_working">Making your AI mixes…</string>
+    <string name="taste_ai_mixes_done">Done! %1$d AI mixes in Library → Playlists</string>
+    <string name="taste_ai_mixes_not_ready">Not enough data yet: %1$d of %2$d liked songs. Keep listening!</string>
+    <string name="taste_ai_mix_prefix">AI mix: %1$s</string>
 </resources>

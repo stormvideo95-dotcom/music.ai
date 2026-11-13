@@ -479,6 +479,10 @@ private fun ThumbnailHeader(
                     modifier = Modifier.basicMarquee()
                 )
             }
+            com.metrolist.music.tasteai.PiStatusBadge(
+                textColor = textColor,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }

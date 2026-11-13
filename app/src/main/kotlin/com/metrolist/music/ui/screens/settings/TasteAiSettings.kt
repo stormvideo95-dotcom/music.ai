@@ -11,6 +11,16 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.metrolist.music.LocalDatabase
+import com.metrolist.music.tasteai.AiMixes
+import com.metrolist.music.tasteai.PiState
+import com.metrolist.music.tasteai.PiStatusDot
+import com.metrolist.music.tasteai.TasteAiStatus
+import com.metrolist.music.tasteai.piStateLabel
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +58,23 @@ fun TasteAiSettingsSection() {
     var showUrlDialog by remember { mutableStateOf(false) }
     var testState by remember { mutableStateOf<TestState>(TestState.Idle) }
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
+    val database = LocalDatabase.current
+    val piState by TasteAiStatus.state.collectAsStateWithLifecycle()
+    var mixesText by remember { mutableStateOf<String?>(null) }
+    var mixesBusy by remember { mutableStateOf(false) }
+
+    LaunchedEffect(enabled, url) {
+        while (true) {
+            if (enabled && url.isNotBlank()) {
+                val health = TasteAiManager.health(url)
+                TasteAiStatus.set(if (health?.ok == true) PiState.ONLINE else PiState.OFFLINE)
+            } else {
+                TasteAiStatus.set(PiState.OFF)
+            }
+            delay(30_000)
+        }
+    }
 
     if (showUrlDialog) {
         TextFieldDialog(
@@ -114,6 +141,33 @@ fun TasteAiSettingsSection() {
                         coroutineScope.launch {
                             val health = TasteAiManager.health(url)
                             testState = if (health?.ok == true) TestState.Ok(health.events, health.trained) else TestState.Failed
+                            TasteAiStatus.set(if (health?.ok == true) PiState.ONLINE else PiState.OFFLINE)
+                        }
+                    },
+                ),
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.cloud),
+                    title = { Text(stringResource(R.string.taste_ai_status)) },
+                    description = { Text(piStateLabel(piState)) },
+                    trailingContent = { PiStatusDot(piState) },
+                ),
+                Material3SettingsItem(
+                    icon = painterResource(R.drawable.queue_music),
+                    title = { Text(stringResource(R.string.taste_ai_mixes_refresh)) },
+                    description = { Text(mixesText ?: stringResource(R.string.taste_ai_mixes_desc)) },
+                    enabled = url.isNotBlank() && !mixesBusy,
+                    onClick = {
+                        mixesBusy = true
+                        mixesText = context.getString(R.string.taste_ai_mixes_working)
+                        coroutineScope.launch {
+                            val result = AiMixes.refresh(context, database, url)
+                            mixesText =
+                                when {
+                                    result == null -> context.getString(R.string.taste_ai_test_fail)
+                                    !result.ready -> context.getString(R.string.taste_ai_mixes_not_ready, result.likedSongs, result.needed)
+                                    else -> context.getString(R.string.taste_ai_mixes_done, result.mixes.size)
+                                }
+                            mixesBusy = false
                         }
                     },
                 ),

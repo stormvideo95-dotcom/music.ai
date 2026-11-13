@@ -28,6 +28,7 @@ import io.ktor.client.call.body
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -37,7 +38,12 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -79,6 +85,38 @@ data class RankResponse(val ids: List<String> = emptyList())
 
 @Serializable
 data class HealthResponse(val ok: Boolean = false, val events: Int = 0, val trained: Boolean = false)
+
+@Serializable
+data class MixSong(
+    val id: String,
+    val title: String = "",
+    val artists: List<String> = emptyList(),
+    val album: String? = null,
+    val duration: Int = 0,
+)
+
+@Serializable
+data class Mix(val name: String, val songs: List<MixSong> = emptyList())
+
+@Serializable
+data class MixesResponse(
+    val ready: Boolean = false,
+    val likedSongs: Int = 0,
+    val needed: Int = 10,
+    val mixes: List<Mix> = emptyList(),
+)
+
+enum class PiState { OFF, CHECKING, ONLINE, OFFLINE }
+
+/** App-wide "is my Pi reachable?" state, shown in the player and settings. */
+object TasteAiStatus {
+    private val _state = MutableStateFlow(PiState.OFF)
+    val state: StateFlow<PiState> = _state.asStateFlow()
+
+    fun set(value: PiState) {
+        _state.value = value
+    }
+}
 
 fun MediaMetadata.toTasteTrack() =
     TasteTrack(
@@ -123,6 +161,16 @@ class TasteAiManager(
                 .map { (it[TasteAiUrlKey] ?: "").trim().trimEnd('/') }
                 .distinctUntilChanged()
                 .collect { serverUrl = it }
+        }
+        scope.launch {
+            while (isActive) {
+                if (active) {
+                    TasteAiStatus.set(if (health(serverUrl)?.ok == true) PiState.ONLINE else PiState.OFFLINE)
+                } else {
+                    TasteAiStatus.set(PiState.OFF)
+                }
+                delay(STATUS_INTERVAL_MS)
+            }
         }
     }
 
@@ -192,8 +240,12 @@ class TasteAiManager(
                 }
             if (res.status.isSuccess()) {
                 pendingLock.withLock { repeat(batch.size.coerceAtMost(pending.size)) { pending.removeFirst() } }
+                TasteAiStatus.set(PiState.ONLINE)
             }
-        }.onFailure { Timber.tag(TAG).d("Pi not reachable, keeping ${batch.size} events for later") }
+        }.onFailure {
+            TasteAiStatus.set(PiState.OFFLINE)
+            Timber.tag(TAG).d("Pi not reachable, keeping ${batch.size} events for later")
+        }
     }
 
     /**
@@ -275,6 +327,7 @@ class TasteAiManager(
         private const val MAX_PENDING = 1000
         private const val SONGS_LEFT_TRIGGER = 2
         private const val ADD_COUNT = 10
+        private const val STATUS_INTERVAL_MS = 60_000L
 
         private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
@@ -288,6 +341,17 @@ class TasteAiManager(
                 expectSuccess = false
             }
         }
+
+        /** Asks the Pi to retrain now, then returns the AI mixes. */
+        suspend fun mixes(url: String): MixesResponse? =
+            withContext(Dispatchers.IO) {
+                val base = url.trim().trimEnd('/')
+                runCatching {
+                    client.post("$base/train") { timeout { requestTimeoutMillis = 60_000 } }
+                    val res = client.get("$base/mixes")
+                    if (res.status.isSuccess()) res.body<MixesResponse>() else null
+                }.getOrNull()
+            }
 
         /** Used by the settings screen "Test connection" button. */
         suspend fun health(url: String): HealthResponse? =
