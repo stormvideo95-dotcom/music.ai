@@ -1195,6 +1195,7 @@ class MusicService :
         }
         tasteAi.start()
         deviceSync.start()
+        com.metrolist.music.tasteai.LikesSync(this, scope, database).start()
         scope.launch {
             currentSong.collect { song -> tasteAi.onLikeState(song?.song?.let { s -> currentMediaMetadata.value?.takeIf { it.id == s.id } }, song?.song?.liked) }
         }

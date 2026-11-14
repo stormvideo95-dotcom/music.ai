@@ -210,7 +210,8 @@ class TasteAiManager(
         liked: Boolean?,
     ) {
         if (track == null || liked == null) return
-        if (track.id == lastLikeId && lastLiked != null && lastLiked != liked && active) {
+        val fromSync = LikesSync.suppressed.remove(track.id) != null
+        if (!fromSync && track.id == lastLikeId && lastLiked != null && lastLiked != liked && active) {
             queue(TasteEvent(if (liked) "like" else "unlike", track.toTasteTrack(), System.currentTimeMillis()))
         }
         lastLikeId = track.id
