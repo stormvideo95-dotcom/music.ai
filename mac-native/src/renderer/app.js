@@ -82,7 +82,13 @@ const player = {
       if (positionSec > 1) {
         audio.addEventListener('loadedmetadata', () => (audio.currentTime = positionSec), { once: true });
       }
-      await audio.play();
+      try {
+        await audio.play();
+      } catch (err) {
+        // A media error: the 'error' handler below retries with another source and skips if needed.
+        if (['AbortError', 'NotSupportedError'].includes(err?.name)) return;
+        throw err;
+      }
     } catch (err) {
       if (token !== this.loadToken) return;
       console.error(err);
@@ -225,6 +231,9 @@ const streamRetries = new Map();
 audio.addEventListener('error', async () => {
   const t = player.current;
   if (!t || !audio.src) return;
+  void api
+    .invoke('yt:playback-error', `code ${audio.error?.code} ${audio.error?.message ?? ''} at ${Math.round(audio.currentTime)}s`)
+    .catch(() => {});
   // The stream may have expired or been cut off: try a fresh one (another source) up to 3 times.
   const tries = streamRetries.get(t.id) ?? 0;
   if (tries < 3) {
@@ -236,9 +245,13 @@ audio.addEventListener('error', async () => {
       audio.src = `${s.src}?r=${Date.now()}`;
       audio.addEventListener('loadedmetadata', () => (audio.currentTime = pos), { once: true });
       await audio.play();
+      if (!player.started) player.started = Date.now();
+      updateMediaSession();
+      void player.maybeExtend();
       return;
-    } catch {
-      /* fall through */
+    } catch (err) {
+      // Another media error fires this handler again (next try); only give up when no stream was found.
+      if (['AbortError', 'NotSupportedError'].includes(err?.name)) return;
     }
   }
   streamRetries.delete(t.id);

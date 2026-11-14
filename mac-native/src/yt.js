@@ -442,6 +442,23 @@ export async function like(videoId, liked) {
 
 // ---------- audio streams ----------
 
+/**
+ * Pick an audio format the Mac app can really play: plain stereo Opus or AAC.
+ * (Some sources also offer surround / Dolby tracks with a higher bitrate; the player can't decode those.)
+ */
+function pickAudioFormat(info) {
+  const all = [...(info.streaming_data?.adaptive_formats ?? []), ...(info.streaming_data?.formats ?? [])];
+  const audio = all.filter((f) => f.has_audio && !f.has_video && /opus|mp4a\.40\.(2|5)/.test(f.mime_type ?? ''));
+  const score = (f) =>
+    ((f.audio_channels ?? 2) <= 2 ? 1e9 : 0) +
+    (f.is_drc ? 0 : 1e8) +
+    (f.is_dubbed || f.is_auto_dubbed || f.is_original === false ? 0 : 1e7) +
+    (f.bitrate ?? 0);
+  const best = audio.sort((a, b) => score(b) - score(a))[0];
+  if (best) return best;
+  return info.chooseFormat({ type: 'audio', quality: 'best', format: 'any' });
+}
+
 async function tryClient(y, videoId, client) {
   const info =
     client === 'YTMUSIC'
@@ -453,10 +470,10 @@ async function tryClient(y, videoId, client) {
     err.signIn = true;
     throw err;
   }
-  const format = info.chooseFormat({ type: 'audio', quality: 'best', format: 'any' });
+  const format = pickAudioFormat(info);
   const url = await format.decipher(y.session.player);
   if (!url) throw new Error('no url');
-  return { url, mime: format.mime_type, client, duration: info.basic_info?.duration ?? 0 };
+  return { url, mime: format.mime_type, itag: format.itag, client, duration: info.basic_info?.duration ?? 0 };
 }
 
 /** 'full' = start and a later part both load, 'start' = only the start loads, false = nothing. */
@@ -485,6 +502,11 @@ async function getAnonYt() {
 }
 
 export let lastStreamReport = [];
+export const playbackErrors = [];
+export function notePlaybackError(text) {
+  playbackErrors.push(String(text).slice(0, 200));
+  while (playbackErrors.length > 4) playbackErrors.shift();
+}
 
 export async function resolveStream(videoId) {
   const cached = streamCache.get(videoId);
@@ -517,7 +539,7 @@ export async function resolveStream(videoId) {
     try {
       const stream = await tryClient(y, videoId, client);
       const ok = await urlWorks(stream.url);
-      report.push(`${key}: ${ok || 'stream refused'}`);
+      report.push(`${key}: ${ok || 'stream refused'} (itag ${stream.itag}, ${String(stream.mime).split(';')[0]})`);
       if (ok === 'full') {
         preferredClient = key;
         lastStreamReport = report;
@@ -618,6 +640,7 @@ export async function diagnose() {
   await rawCheck('Liked songs (VLLM)', 'VLLM');
   await rawCheck('Library songs', 'FEmusic_liked_videos');
   lines.push(`Last song tried: ${lastStreamReport.join(' | ') || 'nothing yet'}`);
+  lines.push(`Player errors: ${playbackErrors.join(' | ') || 'none'}`);
   return lines.join('\n');
 }
 

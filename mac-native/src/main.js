@@ -200,6 +200,7 @@ function registerIpc() {
   ipcMain.handle('yt:upnext', safe((id) => yt.upNext(id)));
   ipcMain.handle('yt:like', safe((id, liked) => yt.like(id, liked)));
   ipcMain.handle('yt:diagnose', safe(() => yt.diagnose()));
+  ipcMain.handle('yt:playback-error', safe((text) => yt.notePlaybackError(text)));
   ipcMain.handle('lyrics:get', safe((track) => getLyrics(track)));
   ipcMain.handle('likes:set', safe((track, liked) => setLike(track, liked)));
   ipcMain.handle('likes:all', safe(() => allLikes()));
