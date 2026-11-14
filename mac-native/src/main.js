@@ -288,7 +288,10 @@ function registerStreamProtocol() {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const s = await yt.resolveStream(id);
-        const res = await net.fetch(s.url, { headers });
+        // Same network stack as the one that asked YouTube for this link (links are tied to the IP address
+        // that requested them; Chromium's own fetch can go out over a different one, e.g. IPv6 vs IPv4).
+        const res = await fetch(s.url, { headers });
+        if (res.status >= 400) yt.notePlaybackError(`upstream ${res.status} via ${s.client}`);
         if (res.status === 403 || res.status === 410) {
           yt.forgetStream(id, true);
           continue;
