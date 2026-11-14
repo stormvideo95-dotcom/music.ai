@@ -459,7 +459,7 @@ async function tryClient(y, videoId, client) {
   return { url, mime: format.mime_type, client, duration: info.basic_info?.duration ?? 0 };
 }
 
-/** Checks the start AND a later part of the stream (some streams are cut off after the first part). */
+/** 'full' = start and a later part both load, 'start' = only the start loads, false = nothing. */
 async function urlWorks(url) {
   try {
     const first = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
@@ -468,49 +468,71 @@ async function urlWorks(url) {
     if (total > 600_000) {
       const at = Math.min(total - 2048, 1_500_000);
       const later = await fetch(url, { headers: { Range: `bytes=${at}-${at + 1023}` } });
-      if (later.status !== 200 && later.status !== 206) return false;
+      if (later.status !== 200 && later.status !== 206) return 'start';
     }
-    return true;
+    return 'full';
   } catch {
     return false;
   }
 }
 
+// Streams are fetched without the account first (that is what worked before signing in);
+// the signed-in session is only the backup, e.g. for age-restricted songs.
+let anonYt = null;
+async function getAnonYt() {
+  anonYt ??= await Innertube.create({ retrieve_player: true, generate_session_locally: false });
+  return anonYt;
+}
+
+export let lastStreamReport = [];
+
 export async function resolveStream(videoId) {
   const cached = streamCache.get(videoId);
   if (cached && cached.expires > Date.now()) return cached;
-  const y = await getYt();
+  const account = await getYt();
+  const sessions = [['anon', await getAnonYt().catch(() => null)]];
+  if (account.session.logged_in) sessions.push(['account', account]);
   const bad = badClients.get(videoId) ?? new Set();
-  const order = (preferredClient
-    ? [preferredClient, ...STREAM_CLIENTS.filter((c) => c !== preferredClient)]
-    : STREAM_CLIENTS
-  ).filter((c) => !bad.has(c));
-  let lastError = null;
+  let attempts = [];
+  for (const [name, y] of sessions) {
+    if (y) for (const client of STREAM_CLIENTS) attempts.push({ key: `${name}:${client}`, y, client });
+  }
+  attempts = attempts.filter((a) => !bad.has(a.key));
+  if (preferredClient) attempts.sort((a, b) => (b.key === preferredClient) - (a.key === preferredClient));
+
+  const report = [];
+  let fallback = null;
   let signIn = false;
-  for (const client of order) {
+  const finish = (stream, key) => {
+    const expireParam = Number(new URL(stream.url).searchParams.get('expire'));
+    const entry = {
+      ...stream,
+      client: key,
+      expires: expireParam ? expireParam * 1000 - 60_000 : Date.now() + 3 * 3600_000,
+    };
+    streamCache.set(videoId, entry);
+    return entry;
+  };
+  for (const { key, y, client } of attempts) {
     try {
       const stream = await tryClient(y, videoId, client);
-      if (!(await urlWorks(stream.url))) {
-        bad.add(client);
-        badClients.set(videoId, bad);
-        if (preferredClient === client) preferredClient = null;
-        throw new Error(`stream rejected (${client})`);
+      const ok = await urlWorks(stream.url);
+      report.push(`${key}: ${ok || 'stream refused'}`);
+      if (ok === 'full') {
+        preferredClient = key;
+        lastStreamReport = report;
+        return finish(stream, key);
       }
-      preferredClient = client;
-      const expireParam = Number(new URL(stream.url).searchParams.get('expire'));
-      const entry = {
-        ...stream,
-        expires: expireParam ? expireParam * 1000 - 60_000 : Date.now() + 3 * 3600_000,
-      };
-      streamCache.set(videoId, entry);
-      return entry;
+      if (ok === 'start' && !fallback) fallback = { stream, key };
     } catch (err) {
-      lastError = err;
       if (err?.signIn) signIn = true;
+      report.push(`${key}: ${String(err?.message ?? err).slice(0, 90)}`);
     }
   }
+  lastStreamReport = report;
+  if (fallback) return finish(fallback.stream, fallback.key);
   if (signIn && !isLoggedIn()) throw new Error('SIGN_IN_REQUIRED');
-  throw lastError ?? new Error('No playable stream');
+  throw new Error('No playable stream');
 }
 
 /** Debug helper for the CI smoke test: what does each client say? */
@@ -595,6 +617,7 @@ export async function diagnose() {
   };
   await rawCheck('Liked songs (VLLM)', 'VLLM');
   await rawCheck('Library songs', 'FEmusic_liked_videos');
+  lines.push(`Last song tried: ${lastStreamReport.join(' | ') || 'nothing yet'}`);
   return lines.join('\n');
 }
 
