@@ -505,7 +505,7 @@ export let lastStreamReport = [];
 export const playbackErrors = [];
 export function notePlaybackError(text) {
   playbackErrors.push(String(text).slice(0, 200));
-  while (playbackErrors.length > 4) playbackErrors.shift();
+  while (playbackErrors.length > 8) playbackErrors.shift();
 }
 
 export async function resolveStream(videoId) {
@@ -519,7 +519,9 @@ export async function resolveStream(videoId) {
   for (const [name, y] of sessions) {
     if (y) for (const client of STREAM_CLIENTS) attempts.push({ key: `${name}:${client}`, y, client });
   }
-  attempts = attempts.filter((a) => !bad.has(a.key));
+  const usable = attempts.filter((a) => !bad.has(a.key));
+  if (usable.length) attempts = usable;
+  else badClients.delete(videoId); // every source was marked bad: start fresh instead of giving up for good
   if (preferredClient) attempts.sort((a, b) => (b.key === preferredClient) - (a.key === preferredClient));
 
   const report = [];

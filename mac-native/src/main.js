@@ -208,7 +208,8 @@ function registerIpc() {
   ipcMain.handle(
     'yt:stream',
     safe(async (id, refresh) => {
-      if (refresh) yt.forgetStream(id, true);
+      // Only drop the cached link; a source is marked bad only when YouTube really refused it.
+      if (refresh) yt.forgetStream(id);
       const s = await yt.resolveStream(id);
       return { src: `musicai://stream/${encodeURIComponent(id)}`, client: s.client, duration: s.duration };
     }),
@@ -283,78 +284,81 @@ function registerStreamProtocol() {
     const id = decodeURIComponent(url.pathname.replace(/^\//, ''));
     if (url.hostname !== 'stream' || !id) return new Response('not found', { status: 404 });
     // YouTube refuses one big download ("bytes=0-") but allows small pieces, so the song is fetched in
-    // 1 MB pieces and handed to the player as one continuous stream.
-    const CHUNK = 1024 * 1024;
+    // 512 KB pieces. Each piece is downloaded completely right away (no connection is left waiting while
+    // the player pauses reading), and a failed piece is retried instead of stopping the song.
+    const CHUNK = 512 * 1024;
     const m = /bytes=(\d+)-(\d*)/.exec(request.headers.get('range') ?? '');
     const start = m ? Number(m[1]) : 0;
     const reqEnd = m && m[2] !== '' ? Number(m[2]) : null;
-    const piece = (url, from, to) => fetch(url, { headers: { Range: `bytes=${from}-${to}` } });
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const s = await yt.resolveStream(id);
-        const firstEnd = reqEnd === null ? start + CHUNK - 1 : Math.min(reqEnd, start + CHUNK - 1);
-        const first = await piece(s.url, start, firstEnd);
-        if (first.status === 416) return new Response(null, { status: 416 });
-        if (!first.ok) {
-          yt.notePlaybackError(`upstream ${first.status} via ${s.client} at byte ${start}`);
-          yt.forgetStream(id, true);
-          continue;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const getPiece = async (from, to, expectTotal) => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        let s;
+        try {
+          s = await yt.resolveStream(id);
+          const res = await fetch(s.url, { headers: { Range: `bytes=${from}-${to}` } });
+          if (res.status === 416) return { status: 416 };
+          if (res.ok) {
+            const total = Number(res.headers.get('content-range')?.split('/')[1]) || 0;
+            if (expectTotal && total && total !== expectTotal) throw new Error('source changed');
+            const buf = new Uint8Array(await res.arrayBuffer());
+            return { buf, total, type: res.headers.get('content-type') ?? s.mime?.split(';')[0] ?? 'audio/webm' };
+          }
+          yt.notePlaybackError(`upstream ${res.status} via ${s.client} at byte ${from}`);
+          // First a fresh link from the same source; if that is refused too, switch source.
+          yt.forgetStream(id, attempt > 0);
+        } catch (err) {
+          const msg = String(err?.message ?? err).slice(0, 60);
+          if (msg === 'source changed' || msg.includes('No playable stream') || msg.includes('SIGN_IN_REQUIRED')) throw err;
+          yt.notePlaybackError(`network: ${msg} at byte ${from}`);
+          await sleep(400 * (attempt + 1));
         }
-        const total = Number(first.headers.get('content-range')?.split('/')[1]) || 0;
-        if (!total) {
-          // No size information: pass this answer through as it is.
-          return new Response(first.body, {
-            status: first.status,
-            headers: { 'content-type': first.headers.get('content-type') ?? s.mime?.split(';')[0] ?? 'audio/webm' },
-          });
-        }
-        const end = reqEnd === null ? total - 1 : Math.min(reqEnd, total - 1);
-        let pos = start;
-        let reader = first.body.getReader();
-        const body = new ReadableStream({
-          async pull(controller) {
-            try {
-              for (;;) {
-                const { done, value } = await reader.read();
-                if (!done) {
-                  pos += value.byteLength;
-                  controller.enqueue(value);
-                  return;
-                }
-                if (pos > end) {
-                  controller.close();
-                  return;
-                }
-                const next = await piece(s.url, pos, Math.min(pos + CHUNK - 1, end));
-                if (!next.ok) {
-                  yt.notePlaybackError(`upstream ${next.status} via ${s.client} at byte ${pos}`);
-                  controller.error(new Error(`upstream ${next.status}`));
-                  return;
-                }
-                reader = next.body.getReader();
-              }
-            } catch (err) {
-              controller.error(err);
-            }
-          },
-          cancel() {
-            reader.cancel().catch(() => {});
-          },
-        });
-        return new Response(body, {
-          status: m ? 206 : 200,
-          headers: {
-            'content-type': first.headers.get('content-type') ?? s.mime?.split(';')[0] ?? 'audio/webm',
-            'accept-ranges': 'bytes',
-            'content-length': String(end - start + 1),
-            ...(m ? { 'content-range': `bytes ${start}-${end}/${total}` } : {}),
-          },
-        });
-      } catch (err) {
-        console.error('[stream]', id, err);
-        yt.notePlaybackError(`stream error: ${String(err?.message ?? err).slice(0, 80)}`);
-        yt.forgetStream(id);
       }
+      throw new Error('piece failed');
+    };
+    try {
+      const firstEnd = reqEnd === null ? start + CHUNK - 1 : Math.min(reqEnd, start + CHUNK - 1);
+      const first = await getPiece(start, firstEnd, 0);
+      if (first.status === 416) return new Response(null, { status: 416 });
+      const total = first.total;
+      if (!total) return new Response(first.buf, { status: 200, headers: { 'content-type': first.type } });
+      const end = reqEnd === null ? total - 1 : Math.min(reqEnd, total - 1);
+      let pos = start;
+      let pending = first.buf;
+      const body = new ReadableStream({
+        async pull(controller) {
+          try {
+            if (!pending) {
+              if (pos > end) {
+                controller.close();
+                return;
+              }
+              const next = await getPiece(pos, Math.min(pos + CHUNK - 1, end), total);
+              if (!next.buf?.byteLength) throw new Error('empty piece');
+              pending = next.buf;
+            }
+            pos += pending.byteLength;
+            controller.enqueue(pending);
+            pending = null;
+            if (pos > end) controller.close();
+          } catch (err) {
+            yt.notePlaybackError(`stopped at byte ${pos}: ${String(err?.message ?? err).slice(0, 60)}`);
+            controller.error(err);
+          }
+        },
+      });
+      return new Response(body, {
+        status: m ? 206 : 200,
+        headers: {
+          'content-type': first.type,
+          'accept-ranges': 'bytes',
+          'content-length': String(end - start + 1),
+          ...(m ? { 'content-range': `bytes ${start}-${end}/${total}` } : {}),
+        },
+      });
+    } catch (err) {
+      console.error('[stream]', id, err);
+      yt.notePlaybackError(`stream error: ${String(err?.message ?? err).slice(0, 80)}`);
     }
     return new Response('stream failed', { status: 502 });
   });
