@@ -219,27 +219,30 @@ const trackForPi = (t) => ({
 audio.addEventListener('ended', () => player.next(true));
 audio.addEventListener('play', renderPlayState);
 audio.addEventListener('pause', renderPlayState);
+const streamRetries = new Map();
 audio.addEventListener('error', async () => {
   const t = player.current;
   if (!t || !audio.src) return;
-  // Stream URL may have expired: get a fresh one once.
-  if (!audio.dataset.retried) {
-    audio.dataset.retried = '1';
+  // The stream may have expired or been cut off: try a fresh one (another source) up to 3 times.
+  const tries = streamRetries.get(t.id) ?? 0;
+  if (tries < 3) {
+    streamRetries.set(t.id, tries + 1);
     const pos = audio.currentTime;
     try {
       const s = await api.invoke('yt:stream', t.id, true);
-      audio.src = s.src;
-      audio.currentTime = pos;
+      if (player.current?.id !== t.id) return;
+      audio.src = `${s.src}?r=${Date.now()}`;
+      audio.addEventListener('loadedmetadata', () => (audio.currentTime = pos), { once: true });
       await audio.play();
       return;
     } catch {
       /* fall through */
     }
   }
+  streamRetries.delete(t.id);
   toast(`Can't play "${t.title}"`);
   player.next(true);
 });
-audio.addEventListener('loadstart', () => delete audio.dataset.retried);
 
 const bar = $('#p-bar');
 let seeking = false;

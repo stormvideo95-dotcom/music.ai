@@ -11,12 +11,14 @@ Platform.shim.eval = async (data, env) => {
 };
 
 // Clients tried in order to get a playable audio stream. The first one that works is remembered.
-export const STREAM_CLIENTS = ['YTMUSIC', 'ANDROID_VR', 'TV', 'IOS', 'WEB_EMBEDDED', 'MWEB', 'WEB'];
+// App/TV clients first: web clients (YTMUSIC, WEB) need an extra token now and their streams stop after ~1 MB.
+export const STREAM_CLIENTS = ['ANDROID_VR', 'TV', 'IOS', 'YTMUSIC', 'WEB_EMBEDDED', 'MWEB', 'WEB'];
 
 let yt = null;
 let ytCookie = '';
 let preferredClient = null;
 const streamCache = new Map(); // videoId -> { url, expires, mime, client }
+const badClients = new Map(); // videoId -> Set of clients whose stream failed
 
 const cookieValue = (cookie, name) => {
   const m = cookie.match(new RegExp(`(?:^|;\\s*)${name.replace(/[$]/g, '\\$&')}=([^;]+)`));
@@ -457,10 +459,18 @@ async function tryClient(y, videoId, client) {
   return { url, mime: format.mime_type, client, duration: info.basic_info?.duration ?? 0 };
 }
 
+/** Checks the start AND a later part of the stream (some streams are cut off after the first part). */
 async function urlWorks(url) {
   try {
-    const res = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
-    return res.status === 200 || res.status === 206;
+    const first = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
+    if (first.status !== 200 && first.status !== 206) return false;
+    const total = Number(first.headers.get('content-range')?.split('/')[1]) || 0;
+    if (total > 600_000) {
+      const at = Math.min(total - 2048, 1_500_000);
+      const later = await fetch(url, { headers: { Range: `bytes=${at}-${at + 1023}` } });
+      if (later.status !== 200 && later.status !== 206) return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -470,15 +480,22 @@ export async function resolveStream(videoId) {
   const cached = streamCache.get(videoId);
   if (cached && cached.expires > Date.now()) return cached;
   const y = await getYt();
-  const order = preferredClient
+  const bad = badClients.get(videoId) ?? new Set();
+  const order = (preferredClient
     ? [preferredClient, ...STREAM_CLIENTS.filter((c) => c !== preferredClient)]
-    : STREAM_CLIENTS;
+    : STREAM_CLIENTS
+  ).filter((c) => !bad.has(c));
   let lastError = null;
   let signIn = false;
   for (const client of order) {
     try {
       const stream = await tryClient(y, videoId, client);
-      if (!(await urlWorks(stream.url))) throw new Error(`stream rejected (${client})`);
+      if (!(await urlWorks(stream.url))) {
+        bad.add(client);
+        badClients.set(videoId, bad);
+        if (preferredClient === client) preferredClient = null;
+        throw new Error(`stream rejected (${client})`);
+      }
       preferredClient = client;
       const expireParam = Number(new URL(stream.url).searchParams.get('expire'));
       const entry = {
@@ -581,6 +598,14 @@ export async function diagnose() {
   return lines.join('\n');
 }
 
-export function forgetStream(videoId) {
+/** Called when playback of a stream failed: drop it, and don't use that client again for this song. */
+export function forgetStream(videoId, failed = false) {
+  const cached = streamCache.get(videoId);
   streamCache.delete(videoId);
+  if (failed && cached) {
+    const bad = badClients.get(videoId) ?? new Set();
+    bad.add(cached.client);
+    badClients.set(videoId, bad);
+    if (preferredClient === cached.client) preferredClient = null;
+  }
 }

@@ -134,7 +134,7 @@ function registerIpc() {
   ipcMain.handle(
     'yt:stream',
     safe(async (id, refresh) => {
-      if (refresh) yt.forgetStream(id);
+      if (refresh) yt.forgetStream(id, true);
       const s = await yt.resolveStream(id);
       return { src: `musicai://stream/${encodeURIComponent(id)}`, client: s.client, duration: s.duration };
     }),
@@ -216,7 +216,7 @@ function registerStreamProtocol() {
         const s = await yt.resolveStream(id);
         const res = await net.fetch(s.url, { headers });
         if (res.status === 403 || res.status === 410) {
-          yt.forgetStream(id);
+          yt.forgetStream(id, true);
           continue;
         }
         const out = new Headers();
