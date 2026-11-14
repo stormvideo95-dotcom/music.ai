@@ -1,349 +1,219 @@
 <div align="center">
 
-<img src="fastlane/metadata/android/en-US/images/icon.png" alt="Metrolist app icon" width="200" />
-
-# Metrolist
-
-### YouTube Music client for Android
-
-<br/>
-
-<a href="https://www.blacksmith.sh">
-  <img src="assets/blacksmith-powered.png" alt="CI powered by Blacksmith" width="280" />
-</a>
+<img src="assets/musicai/banner.svg" alt="Music AI — your own YouTube Music, with an AI that learns your taste" width="100%" />
 
 <br/>
 <br/>
 
-[![Latest release](https://img.shields.io/github/v/release/MetrolistGroup/Metrolist?style=for-the-badge&labelColor=0d1117)](https://github.com/MetrolistGroup/Metrolist/releases)
-[![License](https://img.shields.io/github/license/MetrolistGroup/metrolist?style=for-the-badge&labelColor=0d1117)](https://github.com/MetrolistGroup/Metrolist/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/MetrolistGroup/Metrolist/total?style=for-the-badge&labelColor=0d1117)](https://github.com/MetrolistGroup/Metrolist/releases)
+[![Android APK](https://img.shields.io/badge/Android-APK-3DDC84?style=for-the-badge&logo=android&logoColor=white&labelColor=0d1117)](https://github.com/stormvideo95-dotcom/music.ai/releases?q=build-&expanded=true)
+[![Mac app](https://img.shields.io/badge/Mac-DMG-ffffff?style=for-the-badge&logo=apple&logoColor=white&labelColor=0d1117)](https://github.com/stormvideo95-dotcom/music.ai/releases?q=mac-pro&expanded=true)
+[![iPhone](https://img.shields.io/badge/iPhone-web%20app-0A84FF?style=for-the-badge&logo=safari&logoColor=white&labelColor=0d1117)](#-iphone-web-app)
+[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-taste%20server-C51A4A?style=for-the-badge&logo=raspberrypi&logoColor=white&labelColor=0d1117)](#-the-taste-server-raspberry-pi)
 
-<br/>
+[![APK build](https://img.shields.io/github/actions/workflow/status/stormvideo95-dotcom/music.ai/build_apk.yml?style=flat-square&label=APK%20build&labelColor=0d1117)](https://github.com/stormvideo95-dotcom/music.ai/actions/workflows/build_apk.yml)
+[![Mac build](https://img.shields.io/github/actions/workflow/status/stormvideo95-dotcom/music.ai/build_mac.yml?style=flat-square&label=Mac%20build&labelColor=0d1117)](https://github.com/stormvideo95-dotcom/music.ai/actions/workflows/build_mac.yml)
+[![License](https://img.shields.io/badge/license-GPL--3.0-3565f4?style=flat-square&labelColor=0d1117)](LICENSE)
 
-[![Discord](https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white&labelColor=0d1117)](https://dsc.gg/metrolist)
-[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white&labelColor=0d1117)](https://t.me/metrolistapp)
-
-<br/>
-
-[**Download**](#download-now) · [**Features**](#features) · [**Translate**](#translations) · [**FAQ**](#faq) · [**Support**](#support-the-project)
-
-</div>
-
-> [!WARNING]
-> # MAINTENANCE MODE
-> Metrolist is currently in maintenance mode. This means we will only be fixing bugs and making minor improvements. Please do not submit PRs for new features or major changes, as they will not be accepted.  
-> The app is **NOT** dead, please stay tuned for updates on our discord (found above).
-
-> [!WARNING]
-> **Regional Restriction** - If YouTube Music is unavailable in your region, this app will not work without a **VPN or proxy** connecting to a supported region.
-
----
-
-<div align="center">
-
-<h1><a id="screenshots"></a>Screenshots</h1>
-
-<img src="fastlane/metadata/android/en-US/images/screenshots/screenshot_1.png" alt="Home screen" width="30%" />
-<img src="fastlane/metadata/android/en-US/images/screenshots/screenshot_2.png" alt="Artist screen" width="30%" />
-<img src="fastlane/metadata/android/en-US/images/screenshots/screenshot_3.png" alt="Recognize music screen" width="30%" />
-<img src="fastlane/metadata/android/en-US/images/screenshots/screenshot_4.png" alt="Listen together screen" width="30%" />
-<img src="fastlane/metadata/android/en-US/images/screenshots/screenshot_5.png" alt="Player screen" width="30%" />
-<img src="fastlane/metadata/android/en-US/images/screenshots/screenshot_6.png" alt="Player lyrics screen" width="30%" />
+**[Download](#-download)** · **[Features](#-features)** · **[How the AI works](#-how-the-ai-works)** · **[Set up the Pi](#-the-taste-server-raspberry-pi)** · **[Credits](#-credits)**
 
 </div>
 
 ---
 
-<div align="center">
+## ✨ What is Music AI?
 
-<h1><a id="features"></a>Features</h1>
+Music AI is a **personal music system** built on YouTube Music: no ads, a clean design, and a **taste AI that runs on your own Raspberry Pi**. It learns from what you like, finish and skip, and when your playlist ends it keeps going with songs you'll actually like, in the same style.
+
+No cloud account, no tracking: your taste lives on your own Pi.
+
+<div align="center">
+<img src="assets/musicai/mac-player.jpg" alt="Music AI for Mac: Now Playing with synced lyrics" width="88%" />
+<br/>
+<sub>Music AI for Mac: Material 3 Expressive design, dynamic colour from the album art, synced lyrics.</sub>
+</div>
+
+---
+
+## 🎧 Features
 
 <table>
-  <tr>
-    <td width="50%" valign="top">
+<tr>
+<td width="33%" valign="top">
 
-#### Playback
-- Stream any song or video from YouTube Music
-- Background playback
-- Download & cache for offline use
-- Skip silence
-- Sleep timer
+### 🧠 Taste AI
+Learns from likes, full listens and skips. Recent taste counts more, so it follows you when your taste changes.
 
 </td>
-    <td width="50%" valign="top">
+<td width="33%" valign="top">
 
-#### Audio
-- Audio normalization
-- Tempo & pitch control
-- Equalizer
-- Crossfade
+### ♾️ Smart continue
+When a playlist ends, the music keeps going with songs in the **same style**, picked by your AI.
 
 </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
+<td width="33%" valign="top">
 
-#### Lyrics & Discovery
-- Live synced lyrics
-- AI-powered lyrics translation
-- Personalized quick picks
-- Search songs, albums, artists, videos, and playlists
+### 🎛️ Your own playlists
+Fixed AI playlists like **Phonk** and **Everything else**, refreshed by themselves. Pick the mood you're in.
 
 </td>
-    <td width="50%" valign="top">
+</tr>
+<tr>
+<td valign="top">
 
-#### Library & Account
-- Full library management
-- Local playlists
-- Import playlists
-- Reorder songs in playlist or queue
-- YouTube Music account login
-- Sync songs, artists, albums, and playlists
+### 📡 Play on
+Spotify-style device picker: send the music to your phone, your Mac or a Chromecast, and pick up where you left off.
 
 </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
+<td valign="top">
 
-#### Social
-- Listen together with friends in real-time
-- Last.fm integration for scrobbling
-- Safe Discord Rich Presence
+### ❤️ Shared likes
+Like a song on your phone and it's liked on your Mac too, and the other way around.
 
 </td>
-    <td width="50%" valign="top">
+<td valign="top">
 
-#### Interface
-- Home screen widget
-- Light / Dark / Black / Dynamic theme modes
-- Dynamic color + 19 preset color palettes
-- Built with Material 3
+### 🔐 Pair with a code
+Connect a new device with a one-time code. No passwords, no accounts.
 
 </td>
-  </tr>
+</tr>
+<tr>
+<td valign="top">
+
+### 🎤 Lyrics
+Synced lyrics that follow the song, with plain lyrics as a fallback.
+
+</td>
+<td valign="top">
+
+### 🚗 Android Auto
+Your music and AI playlists in the car.
+
+</td>
+<td valign="top">
+
+### 🚫 No ads
+Ad-free playback on every device.
+
+</td>
+</tr>
 </table>
 
-</div>
+---
+
+## 📲 Download
+
+| Device | What you get | Download |
+|---|---|---|
+| 🤖 **Android** | The full app, based on Metrolist | [Latest APK (`build-…`)](https://github.com/stormvideo95-dotcom/music.ai/releases?q=build-&expanded=true) |
+| 💻 **Mac** | Own-design desktop app (Apple Silicon and Intel) | [Latest DMG (`mac-pro-…`)](https://github.com/stormvideo95-dotcom/music.ai/releases?q=mac-pro&expanded=true) |
+| 📱 **iPhone** | Web app served by the Pi, add it to the Home Screen | [See below](#-iphone-web-app) |
+
+> [!NOTE]
+> The Mac app is not signed with an Apple developer certificate. The first time, right-click the app → **Open** → **Open**.
 
 ---
 
-<div align="center">
+## 🧠 How the AI works
 
-<h1><a id="download-now"></a>Download Now</h1>
-
-<h2>Stable Release</h2>
-
-<table>
-  <tr>
-    <th align="center">Obtainium</th>
-    <th align="center">IzzyOnDroid</th>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/MetrolistGroup/Metrolist/">
-        <img src="assets/badges/obtainium.svg" alt="Add Metrolist to Obtainium" height="100">
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://apt.izzysoft.de/fdroid/index/apk/com.metrolist.music">
-        <img src="assets/badges/izzyondroid.svg" alt="Get Metrolist on IzzyOnDroid" height="100">
-      </a>
-    </td>
-  </tr>
-  <tr>
-    <th align="center">OpenAPK</th>
-    <th align="center">GitHub</th>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://www.openapk.net/metrolist/com.metrolist.music/">
-        <img src="assets/badges/openapk.svg" alt="Get Metrolist on OpenAPK" height="100">
-      </a>
-    </td>
-    <td align="center">
-      <a href="https://github.com/MetrolistGroup/Metrolist/releases/latest/download/Metrolist.apk">
-        <img src="assets/badges/github-stable.svg" alt="Get the stable Metrolist release on GitHub" height="100">
-      </a>
-    </td>
-  </tr>
-</table>
-
-<h2>Nightly Build</h2>
-
-<table>
-  <tr>
-    <th align="center">GitHub</th>
-  </tr>
-  <tr>
-    <td align="center">
-      <a href="https://github.com/MetrolistGroup/Metrolist/releases/download/nightly/Metrolist-with-Google-Cast.apk">
-        <img src="assets/badges/github-nightly.svg" alt="Get the Metrolist nightly build on GitHub" height="120">
-      </a>
-    </td>
-  </tr>
-</table>
-
-</div>
-
----
-
-<div align="center">
-
-<h1><a id="faq"></a>FAQ</h1>
-
-<h3>Got questions? Check out our <a href="https://metrolist.cc/#faq">FAQ page</a> for answers to the most common ones.</h3>
-
-</div>
-
----
-
-<div align="center">
-
-<h1><a id="translations"></a>Translations</h1>
-
-[![Translation status](https://img.shields.io/weblate/progress/metrolist?style=for-the-badge&labelColor=0d1117)](https://hosted.weblate.org/engage/metrolist/)
-
-<h3>We use Weblate to translate Metrolist. <a href="https://hosted.weblate.org/projects/Metrolist/">Help us bring Metrolist to more people!</a></h3>
-
-<a href="https://hosted.weblate.org/projects/Metrolist/">
-  <img src="https://hosted.weblate.org/widget/Metrolist/horizontal-auto.svg" alt="Translation status" />
-</a>
-
-<h3>Thank you! Every translation makes Metrolist a little more accessible to someone, somewhere in the world.</h3>
-
-</div>
-
----
-
-<div align="center">
-
-<h1><a id="support-the-project"></a>Support the Project</h1>
-
-<h3>Metrolist is free and open-source. If it brings you joy, consider supporting its development!</h3>
-
-#### Monero (XMR)
-
-<img src="assets/XMR.png" alt="Monero QR code" width="150" />
-
-```text
-44XjSELSWcgJTZiCKzjpCQWyXhokrH9RqH3rpp35FkSKi57T25hniHWHQNhLeXyFn3DDYqufmfRB1iEtENerZpJc7xJCcqt
+```mermaid
+flowchart LR
+    A["📱 Phone / 💻 Mac<br/>like · listen · skip"] -->|events| B["🍓 Taste server<br/>on the Pi"]
+    B --> C["Taste scores<br/>songs · artists · words<br/>(14-day memory)"]
+    C --> D["Taste groups<br/>+ your instructions"]
+    D -->|AI playlists| A
+    C -->|"ranks 'up next'"| E["♾️ Smart continue"]
+    E --> A
 ```
 
-#### Buy Me a Coffee
+1. **It listens.** Every like, full listen and skip is sent to the taste server on your Pi.
+2. **It scores.** Songs, artists, albums and title words get a taste score. Old listens slowly count less (half-life of 14 days), so new taste wins.
+3. **It groups.** Your liked songs are split into styles, or into the fixed playlists from your own instructions (like *Phonk* vs *Everything else*).
+4. **It picks.** When a playlist ends, YouTube Music suggests candidates and the AI ranks them: style you're in now, your scores, at most 2 songs per artist, and a little randomness so you still discover new music.
 
-<a href="https://www.buymeacoffee.com/mostafaalagamy">
-  <img src="assets/buymeacoffee.png" alt="Buy Me a Coffee" width="150" />
-</a>
-
-</div>
+Everything runs in plain Python with SQLite: no GPU, no cloud.
 
 ---
 
+## 🍓 The taste server (Raspberry Pi)
+
+Runs on any Raspberry Pi (tested on a Pi 5 with Umbrel) with Docker.
+
+```bash
+git clone https://github.com/stormvideo95-dotcom/music.ai.git
+cd music.ai/taste-server
+sudo docker compose up -d --build
+```
+
+| Service | Port | What it does |
+|---|---|---|
+| `music-ai-taste` | `8765` | Your taste AI for the phone and Mac apps |
+| `music-ai-dad` | `8766` | A second, separate taste AI + the iPhone web app |
+| `music-ai-token` | — | Helper that lets the Pi fetch full songs from YouTube |
+
+Then in the app: **Settings → Player and audio → Music AI**, and fill in `http://<your-pi>:8765`.
+
+**Update later:**
+
+```bash
+cd ~/music.ai/taste-server && git pull && sudo docker compose up -d --build
+```
+
+<details>
+<summary><b>API endpoints</b></summary>
+
+| Method | Path | |
+|---|---|---|
+| `GET` | `/health` | Is the server alive |
+| `GET` | `/stats` | What the AI has learned |
+| `GET` | `/mixes` | AI playlists |
+| `GET` | `/likes` | Shared liked songs |
+| `POST` | `/events` | Likes, listens and skips |
+| `POST` | `/rank` | Rank "up next" candidates |
+| `POST` | `/train` | Retrain now |
+| `POST` | `/pair/start`, `/pair/approve` | Pair a device with a one-time code |
+| `GET`/`POST` | `/sync/*` | Play on: devices, state, commands |
+
+</details>
+
+---
+
+## 📱 iPhone web app
+
+A separate, Apple-style web app with **its own taste AI**, so its taste never mixes with yours. The Pi fetches the songs and the iPhone just plays them.
+
+1. Open `http://<your-pi>:8766` in Safari (via Tailscale when away from home).
+2. Tap **Share → Add to Home Screen**.
+
+**Smart cache:** songs played 3 times or more stay saved on the Pi (on a USB stick if you have one); other songs are removed after a day. The cache never grows past 2 GB.
+
+---
+
+## 🗂️ What's in this repo
+
+```
+music.ai/
+├── app/            Android app (Kotlin, Jetpack Compose) — fork of Metrolist
+│   └── …/tasteai/  Music AI parts: taste AI, AI playlists, Play on, shared likes
+├── mac-native/     Mac app (Electron, own design)
+├── taste-server/   Taste AI + iPhone web app for the Raspberry Pi (Python, Docker)
+└── .github/        Builds the APK and the Mac DMGs automatically
+```
+
+---
+
+## 🙏 Credits
+
+Music AI is built on **[Metrolist](https://github.com/MetrolistGroup/Metrolist)**, the open-source YouTube Music client for Android, and keeps its GPL-3.0 license. Huge thanks to the Metrolist team and everyone who worked on the projects it builds on.
+
+Also used: [youtubei.js](https://github.com/LuanRT/YouTube.js) (Mac app), [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [ytmusicapi](https://github.com/sigma67/ytmusicapi) (Pi), [LRCLIB](https://lrclib.net) (lyrics) and [material-color-utilities](https://github.com/material-foundation/material-color-utilities) (dynamic colour).
+
+> [!IMPORTANT]
+> Music AI is a personal project and is not affiliated with YouTube or Google. YouTube Music needs to be available in your region.
+
 <div align="center">
-
-<h1>Special Thanks</h1>
-
-<h3>Metrolist stands on the shoulders of incredible open-source work.</h3>
-
-<h3>Main Inspirations</h3>
-
-<table>
-  <thead>
-    <tr>
-      <th align="center">Project</th>
-      <th align="center">Authors</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center"><strong>InnerTune</strong></td>
-      <td align="center"><a href="https://github.com/z-huang">Zion Huang</a> · <a href="https://github.com/Malopieds">Malopieds</a></td>
-    </tr>
-    <tr>
-      <td align="center"><strong>OuterTune</strong></td>
-      <td align="center"><a href="https://github.com/DD3Boh">Davide Garberi</a> · <a href="https://github.com/mikooomich">Michael Zh</a></td>
-    </tr>
-  </tbody>
-</table>
-
-<h3>Libraries & Integrations</h3>
-
-<table>
-  <thead>
-    <tr>
-      <th align="center">Project</th>
-      <th align="center">Contribution</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td align="center"><a href="https://better-lyrics.boidu.dev"><strong>Better Lyrics</strong></a></td>
-      <td>Time-synced lyrics with word-by-word highlighting & YouTube Music integration</td>
-    </tr>
-    <tr>
-      <td align="center"><a href="https://github.com/MetrolistGroup/metroserver"><strong>metroserver</strong></a></td>
-      <td>Listen-together real-time backend</td>
-    </tr>
-    <tr>
-      <td align="center"><a href="https://github.com/aleksey-saenko/MusicRecognizer"><strong>MusicRecognizer</strong></a></td>
-      <td>Music recognition feature & Shazam API integration</td>
-    </tr>
-    <tr>
-      <td align="center"><a href="https://github.com/ZemerTeam/zemer-cipher"><strong>zemer-cipher</strong></a></td>
-      <td>YouTube cipher deobfuscation and PoToken generation</td>
-    </tr>
-    <tr>
-      <td align="center"><a href="https://www.blacksmith.sh"><strong>Blacksmith</strong></a></td>
-      <td>High-performance GitHub Actions runners powering our CI</td>
-    </tr>
-  </tbody>
-</table>
-
 <br/>
-
-<a href="https://www.blacksmith.sh">
-  <img src="assets/blacksmith-powered.png" alt="CI powered by Blacksmith" width="280" />
-</a>
-
-<h3>We also thank the entire open-source community! For every library, tool, and API that powers this project.</h3>
-
-</div>
-
----
-
-<div align="center">
-
-<h1>Contributors</h1>
-
-<h3>This project wouldn't exist without these amazing people!</h3>
-
-<a href="https://github.com/MetrolistGroup/Metrolist/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=MetrolistGroup/Metrolist" alt="Contributors" />
-</a>
-
-</div>
-
----
-
-<div align="center">
-
-<h1>Disclaimer</h1>
-
-This project is **not affiliated with, funded, authorized, endorsed by, or in any way associated** with YouTube, Google LLC, Metrolist Group LLC, or any of their affiliates and subsidiaries.
-
-All trademarks, service marks, and intellectual property rights referenced in this project belong to their respective owners.
-
-</div>
-
----
-
-<div align="center">
-
+<img src="assets/musicai/logo.png" alt="" width="72" />
 <br/>
-
-**Made with ❤️ by [Mo Agamy](https://github.com/mostafaalagamy)**
-
-**This project stands with Palestine 🇵🇸**
-
+<sub>Made by <b>Storm Gees</b> · <a href="LICENSE">GPL-3.0</a></sub>
 </div>
