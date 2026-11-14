@@ -22,6 +22,8 @@ services:
       - "8766:8765"
     volumes:
       - ./data-dad:/data
+      # saved songs (smart cache) live on the USB stick named "extra"
+      - /home/umbrel/umbrel/external/extra/music-ai-songs:/data/songs
     environment:
       - TZ=Europe/Brussels
       - HALF_LIFE_DAYS=14
