@@ -167,12 +167,14 @@ const player = {
     if (liked) this.liked.add(t.id);
     else this.liked.delete(t.id);
     renderLike();
-    void api.invoke('pi:event', { type: liked ? 'like' : 'unlike', track: trackForPi(t), ts: Date.now() }).catch(() => {});
-    if (config.loggedIn) {
-      api.invoke('yt:like', t.id, liked).catch((err) => toast(`YouTube Music didn't save that like: ${err.message}`));
-    } else {
-      toast('Sign in (Settings) to save likes to YouTube Music');
+    try {
+      const r = await api.invoke('likes:set', { ...trackForPi(t), subtitle: t.subtitle, thumb: thumbOf(t) }, liked);
+      toast(liked ? 'Added to Liked music' : 'Removed from Liked music');
+      if (r.error) console.warn('YouTube like failed', r.error);
+    } catch (err) {
+      toast(`Couldn't save: ${err.message}`);
     }
+    if (route.name === 'playlist' && /^(VL)?LM$/.test(route.arg)) renderPlaylist(route.arg);
   },
 
   /** Keep the music going: when 2 songs are left, add songs (ranked by the Pi when Smart continue is on). */
@@ -961,11 +963,33 @@ function bindCollection(items) {
 
 async function renderPlaylist(id) {
   loading();
+  if (/^(VL)?LM$/.test(id)) return renderLiked(id);
   try {
     const data = await api.invoke('yt:playlist', id);
     if (route.arg !== id) return;
     const cover = data.thumb || thumbOf(data.items[0]);
     view.innerHTML = collectionHtml('Playlist', data, `<img src="${esc(cover)}" alt="" />`);
+    bindCollection(data.items);
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function renderLiked(id) {
+  try {
+    const data = await api.invoke('likes:all');
+    if (route.arg !== id) return;
+    for (const t of data.items) player.liked.add(t.id);
+    const sub = `${data.items.length} songs · from this Mac${data.piOnline ? ', your phone (via Pi)' : ''}${config.loggedIn ? ' and YouTube Music' : ''}`;
+    view.innerHTML = collectionHtml(
+      'Playlist',
+      { title: 'Liked music', subtitle: sub, items: data.items },
+      `<div class="mix-cover" style="clip-path:none;border-radius:var(--shape-xxl);background:linear-gradient(135deg,#7b6cf6,#e963a8);color:#fff"><span class="ms fill" style="font-size:96px">favorite</span></div>`,
+    );
+    if (!data.items.length) {
+      $('#track-list').outerHTML = '<div class="empty">No liked songs yet. Tap the heart on a song to add it here.</div>';
+      return;
+    }
     bindCollection(data.items);
   } catch (err) {
     showError(err);
@@ -1149,6 +1173,8 @@ api.on('config', (c) => {
 // ======================================================================
 (async () => {
   config = await api.invoke('config:get').catch(() => ({}));
+  for (const id of await api.invoke('likes:ids').catch(() => [])) player.liked.add(id);
+  api.invoke('likes:all').then((d) => d.items.forEach((t) => player.liked.add(t.id))).catch(() => {});
   piStatus = await api.invoke('pi:status').catch(() => 'off');
   audio.volume = config.volume ?? 0.8;
   vol.value = Math.round(audio.volume * 100);

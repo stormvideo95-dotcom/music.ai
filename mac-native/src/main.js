@@ -60,6 +60,76 @@ const pi = new Pi(
   (command) => send('pi:command', command),
 );
 
+// ---------- liked songs: saved on this Mac, on the Pi (shared with the phone) and on YouTube Music ----------
+const likesPath = () => path.join(app.getPath('userData'), 'likes.json');
+let localLikes = {};
+const loadLikes = () => {
+  try {
+    localLikes = JSON.parse(fs.readFileSync(likesPath(), 'utf8'));
+  } catch {
+    localLikes = {};
+  }
+};
+const saveLikes = () => fs.writeFileSync(likesPath(), JSON.stringify(localLikes));
+
+async function setLike(track, liked) {
+  if (liked) localLikes[track.id] = { ...track, likedAt: Date.now() };
+  else delete localLikes[track.id];
+  saveLikes();
+  void pi.event({ type: liked ? 'like' : 'unlike', track: { ...track, thumbnail: track.thumb ?? null }, ts: Date.now() });
+  if (yt.isLoggedIn()) {
+    try {
+      await yt.like(track.id, liked);
+    } catch (err) {
+      return { savedOnYouTube: false, error: String(err?.message ?? err) };
+    }
+    return { savedOnYouTube: true };
+  }
+  return { savedOnYouTube: false };
+}
+
+/** One liked-songs list: this Mac + the Pi (phone likes) + YouTube Music, newest first, no doubles. */
+async function allLikes() {
+  const out = new Map();
+  const add = (t, source) => {
+    if (!t?.id || out.has(t.id)) return;
+    out.set(t.id, {
+      kind: 'song',
+      id: t.id,
+      title: t.title ?? '',
+      subtitle: t.subtitle ?? (t.artists ?? []).join(', '),
+      artists: t.artists ?? [],
+      album: t.album ?? null,
+      duration: t.duration ?? 0,
+      thumb: t.thumb ?? null,
+      likedAt: t.likedAt ?? 0,
+      source,
+    });
+  };
+  const local = Object.values(localLikes).sort((a, b) => (b.likedAt ?? 0) - (a.likedAt ?? 0));
+  const [piLikes, ytLiked] = await Promise.all([
+    pi.likes().catch(() => null),
+    yt.isLoggedIn() ? yt.playlist('LM').catch(() => null) : null,
+  ]);
+  // A song unliked on another device (newer than our like) is removed here too.
+  const unliked = new Set();
+  for (const u of piLikes?.unliked ?? []) {
+    const mine = localLikes[u.id];
+    if (!mine || (mine.likedAt ?? 0) < u.at) unliked.add(u.id);
+  }
+  for (const id of unliked) {
+    if (localLikes[id]) {
+      delete localLikes[id];
+      saveLikes();
+    }
+  }
+  for (const t of [...local, ...(piLikes?.likes ?? [])].sort((a, b) => (b.likedAt ?? 0) - (a.likedAt ?? 0))) {
+    if (!unliked.has(t.id)) add(t, 'app');
+  }
+  for (const t of ytLiked?.items ?? []) add(t, 'youtube');
+  return { items: [...out.values()].filter((t) => !unliked.has(t.id) || t.source === 'youtube'), youtubeCount: ytLiked?.items?.length ?? 0, piOnline: Boolean(piLikes) };
+}
+
 // ---------- YouTube login (cookies from a real Google sign-in window) ----------
 async function cookieString() {
   const ses = session.fromPartition(YT_PARTITION);
@@ -131,6 +201,9 @@ function registerIpc() {
   ipcMain.handle('yt:like', safe((id, liked) => yt.like(id, liked)));
   ipcMain.handle('yt:diagnose', safe(() => yt.diagnose()));
   ipcMain.handle('lyrics:get', safe((track) => getLyrics(track)));
+  ipcMain.handle('likes:set', safe((track, liked) => setLike(track, liked)));
+  ipcMain.handle('likes:all', safe(() => allLikes()));
+  ipcMain.handle('likes:ids', safe(() => Object.keys(localLikes)));
   ipcMain.handle(
     'yt:stream',
     safe(async (id, refresh) => {
@@ -267,6 +340,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   loadConfig();
+  loadLikes();
   registerStreamProtocol();
   registerIpc();
   createWindow();

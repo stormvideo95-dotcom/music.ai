@@ -98,6 +98,11 @@ export class Pi {
     return res?.data?.ids ?? null;
   }
 
+  async likes() {
+    const res = await this.call('/likes', { timeoutMs: 5000 });
+    return res?.data?.likes ? res.data : null;
+  }
+
   async mixes() {
     await this.call('/train', { method: 'POST', body: {}, timeoutMs: 60_000 });
     const res = await this.call('/mixes');

@@ -514,6 +514,30 @@ def add_events(events):
     return added
 
 
+def current_likes():
+    """Songs whose latest like/unlike is a like (from any device), newest first."""
+    with db_lock:
+        conn = db()
+        rows = conn.execute(
+            """SELECT e.track_id, e.title, e.artists, e.album, e.duration, e.type, e.ts FROM events e
+               JOIN (SELECT track_id, MAX(ts) AS ts FROM events WHERE type IN ('like','unlike') GROUP BY track_id) last
+               ON e.track_id = last.track_id AND e.ts = last.ts
+               WHERE e.type IN ('like','unlike')
+               ORDER BY e.ts DESC"""
+        ).fetchall()
+        conn.close()
+    seen, out, unliked = set(), [], []
+    for tid, title, artists, album, duration, etype, ts in rows:
+        if tid in seen:
+            continue
+        seen.add(tid)
+        if etype == "like":
+            out.append({"id": tid, "title": title, "artists": json.loads(artists or "[]"), "album": album, "duration": duration, "likedAt": ts})
+        else:
+            unliked.append({"id": tid, "at": ts})
+    return out, unliked
+
+
 def stats():
     with model_lock:
         weights = dict(model["weights"])
@@ -600,6 +624,9 @@ class Handler(BaseHTTPRequestHandler):
                     "mixes": [{"name": c["name"], "songs": c["songs"]} for c in clusters],
                 },
             )
+        elif self.path == "/likes":
+            likes, unliked = current_likes()
+            self._send(200, {"likes": likes, "unliked": unliked})
         elif self.path == "/stats":
             self._send(200, stats())
         else:
