@@ -50,9 +50,16 @@ object AiMixes {
 
                 val name = context.getString(R.string.taste_ai_mix_prefix, mix.name)
                 if (existing == null) {
-                    database.insert(PlaylistEntity(id = id, name = name))
+                    // bookmarkedAt is what makes a playlist show up on the Library > Playlists page
+                    database.insert(PlaylistEntity(id = id, name = name, bookmarkedAt = LocalDateTime.now()))
                 } else {
-                    database.update(existing.playlist.copy(name = name, lastUpdateTime = LocalDateTime.now()))
+                    database.update(
+                        existing.playlist.copy(
+                            name = name,
+                            lastUpdateTime = LocalDateTime.now(),
+                            bookmarkedAt = existing.playlist.bookmarkedAt ?: LocalDateTime.now(),
+                        ),
+                    )
                 }
                 database.clearPlaylist(id)
 

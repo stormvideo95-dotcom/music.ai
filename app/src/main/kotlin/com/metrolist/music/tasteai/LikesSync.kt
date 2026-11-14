@@ -71,8 +71,17 @@ class LikesSync(
     fun start() {
         scope.launch(Dispatchers.IO) {
             delay(8_000)
+            var round = 0
             while (isActive) {
                 runCatching { syncOnce() }.onFailure { Timber.tag(TAG).d("likes sync skipped: ${it.message}") }
+                // Keep the AI mixes on the Playlists page up to date: at app start, then about every 6 hours.
+                if (round % MIXES_EVERY_ROUNDS == 0) {
+                    runCatching {
+                        val url = (context.dataStore.data.first()[TasteAiUrlKey] ?: "").trim().trimEnd('/')
+                        if (url.isNotBlank()) AiMixes.refresh(context, database, url)
+                    }.onFailure { Timber.tag(TAG).d("mixes refresh skipped: ${it.message}") }
+                }
+                round++
                 delay(INTERVAL_MS)
             }
         }
@@ -159,6 +168,7 @@ class LikesSync(
     companion object {
         private const val TAG = "LikesSync"
         private const val INTERVAL_MS = 120_000L
+        private const val MIXES_EVERY_ROUNDS = 180
 
         /** Songs whose liked state was just changed by a sync: don't report those back as new likes. */
         val suppressed = ConcurrentHashMap<String, Boolean>()
