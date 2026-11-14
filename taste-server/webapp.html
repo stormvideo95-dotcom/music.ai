@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Music AI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Music AI">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
+<style>
+:root{
+  color-scheme:light dark;
+  --bg:#f2f2f7;--card:#fff;--text:#000;--text2:rgba(60,60,67,.72);--sep:rgba(60,60,67,.18);
+  --fill:rgba(120,120,128,.14);--accent:#3565f4;--bar:rgba(249,249,249,.82);
+  --spring:cubic-bezier(.32,.72,0,1);
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#000;--card:#1c1c1e;--text:#fff;--text2:rgba(235,235,245,.66);--sep:rgba(84,84,88,.5);
+  --fill:rgba(120,120,128,.26);--accent:#6f93ff;--bar:rgba(28,28,30,.8);
+}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font:17px/1.3 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;overscroll-behavior:none;-webkit-user-select:none;user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+svg{display:block;fill:currentColor}
+main{height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  padding:calc(env(safe-area-inset-top) + 12px) 20px calc(env(safe-area-inset-bottom) + 150px)}
+.page{display:none}.page.on{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+h1{font:700 34px/1.1 -apple-system,"SF Pro Display",system-ui;letter-spacing:-.4px;margin:8px 0 16px}
+h2{font:700 22px/1.2 -apple-system,"SF Pro Display",system-ui;margin:28px 0 10px;display:flex;align-items:center;justify-content:space-between}
+h2 button{font-size:15px;font-weight:400;color:var(--accent);min-height:44px;padding:0 4px}
+.muted{color:var(--text2);font-size:15px}
+.search{display:flex;align-items:center;gap:8px;background:var(--fill);border-radius:12px;padding:0 10px;height:44px;margin-bottom:8px}
+.search svg{width:18px;height:18px;color:var(--text2);flex:none}
+.search input{flex:1;border:0;outline:0;background:none;font:inherit;color:var(--text);min-width:0;-webkit-user-select:text;user-select:text}
+.row{display:flex;align-items:center;gap:12px;min-height:60px;padding:6px 0;border-bottom:.5px solid var(--sep);width:100%;text-align:left;transition:opacity .15s}
+.row:active{opacity:.5}
+.row img{width:48px;height:48px;border-radius:6px;object-fit:cover;background:var(--fill);flex:none}
+.row .t{flex:1;min-width:0}
+.row b,.row span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row b{font-weight:400}.row.now b{color:var(--accent);font-weight:600}
+.row span{color:var(--text2);font-size:14px}
+.mixes{display:flex;gap:14px;overflow-x:auto;margin:0 -20px;padding:2px 20px 6px;scroll-snap-type:x mandatory;scrollbar-width:none}
+.mixes::-webkit-scrollbar{display:none}
+.mix{flex:none;width:156px;text-align:left;scroll-snap-align:start;transition:transform .35s var(--spring)}
+.mix:active{transform:scale(.96)}
+.mix .art{width:156px;height:156px;border-radius:14px;display:grid;grid-template-columns:1fr 1fr;overflow:hidden;background:var(--fill);box-shadow:0 6px 18px rgba(0,0,0,.16)}
+.mix .art img{width:100%;height:100%;object-fit:cover}
+.mix b{display:block;margin-top:8px;font-weight:500;font-size:15px}
+.mix span{color:var(--text2);font-size:13px}
+.empty{background:var(--card);border-radius:14px;padding:16px;color:var(--text2);font-size:15px}
+/* tab bar + mini player */
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--bar);
+  -webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);
+  border-top:.5px solid var(--sep);padding-bottom:env(safe-area-inset-bottom);z-index:5}
+nav button{flex:1;height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:10px;font-weight:500;color:var(--text2)}
+nav button.on{color:var(--accent)}
+nav svg{width:26px;height:26px}
+#mini{position:fixed;left:10px;right:10px;bottom:calc(env(safe-area-inset-bottom) + 60px);height:58px;border-radius:16px;
+  background:var(--bar);-webkit-backdrop-filter:saturate(180%) blur(24px);backdrop-filter:saturate(180%) blur(24px);
+  box-shadow:0 8px 24px rgba(0,0,0,.2);display:flex;align-items:center;gap:10px;padding:0 6px 0 8px;z-index:6;
+  transform:translateY(140%);transition:transform .5s var(--spring)}
+#mini.on{transform:none}
+#mini img{width:42px;height:42px;border-radius:8px;object-fit:cover;background:var(--fill)}
+#mini .t{flex:1;min-width:0;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ib{width:44px;height:44px;display:grid;place-items:center;border-radius:50%;transition:transform .3s var(--spring),background .2s}
+.ib:active{transform:scale(.86);background:var(--fill)}
+.ib svg{width:26px;height:26px}
+/* now playing sheet */
+#np{position:fixed;inset:0;z-index:10;color:#fff;background:#111;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 8px) 28px calc(env(safe-area-inset-bottom) + 20px);
+  transform:translateY(100%);transition:transform .55s var(--spring);overflow:hidden;touch-action:none}
+#np.on{transform:none}
+#np .bg{position:absolute;inset:-80px;background-size:cover;background-position:center;filter:blur(60px) saturate(1.6) brightness(.55);z-index:-1;transition:background-image .6s}
+#np .grab{width:100%;height:36px;display:grid;place-items:center;flex:none}
+#np .grab i{width:38px;height:5px;border-radius:3px;background:rgba(255,255,255,.45)}
+#np .cover{flex:1;display:grid;place-items:center;min-height:0;padding:10px 0}
+#np .cover img{width:min(100%,46vh);aspect-ratio:1;border-radius:14px;object-fit:cover;box-shadow:0 20px 50px rgba(0,0,0,.5);
+  transform:scale(.8);transition:transform .6s cubic-bezier(.3,1.5,.5,1)}
+#np.playing .cover img{transform:none}
+#np .meta{display:flex;align-items:center;gap:12px;margin-top:10px}
+#np .meta .t{flex:1;min-width:0}
+#np .meta b,#np .meta span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#np .meta b{font:600 21px/1.25 -apple-system,"SF Pro Display",system-ui}
+#np .meta span{font-size:18px;color:rgba(255,255,255,.7)}
+#like.on{color:#ff375f}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:none;margin:10px 0 0}
+input[type=range]::-webkit-slider-runnable-track{height:7px;border-radius:4px;background:linear-gradient(to right,#fff var(--p,0%),rgba(255,255,255,.28) var(--p,0%))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:7px;height:7px;border-radius:50%;background:#fff}
+.times{display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,.6);font-variant-numeric:tabular-nums}
+.ctl{display:flex;align-items:center;justify-content:space-evenly;margin:14px 0 6px}
+.ctl .ib{width:72px;height:72px}.ctl .ib svg{width:40px;height:40px}.ctl #pp svg{width:52px;height:52px}
+#status{text-align:center;font-size:13px;color:rgba(255,255,255,.7);min-height:18px}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{transition-duration:.01s!important;animation:none!important}
+  #np{transition:opacity .2s;opacity:0;pointer-events:none;transform:none}#np.on{opacity:1;pointer-events:auto}#np .cover img{transform:none}}
+</style>
+</head>
+<body>
+<main>
+  <section class="page on" id="p-home">
+    <h1>Listen Now</h1>
+    <h2>Made for you <button id="refresh" aria-label="Refresh mixes">Refresh</button></h2>
+    <div id="mixes"></div>
+    <h2>Favourites</h2>
+    <div id="liked"></div>
+  </section>
+  <section class="page" id="p-search">
+    <h1>Search</h1>
+    <label class="search"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 4.2 12.6l4.6 4.6 1.4-1.4-4.6-4.6A7 7 0 0 0 10 3zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10z"/></svg>
+      <input id="q" type="search" placeholder="Songs, artists" autocomplete="off" autocorrect="off" enterkeyhint="search" aria-label="Search"></label>
+    <div id="results"><p class="muted">Type a song or an artist.</p></div>
+  </section>
+  <section class="page" id="p-queue">
+    <h1>Up Next</h1>
+    <div id="queue"><p class="muted">Play a song. When it ends, the AI keeps going with songs that fit.</p></div>
+  </section>
+</main>
+
+<div id="mini">
+  <img id="m-img" alt=""><div class="t" id="m-title"></div>
+  <button class="ib" id="m-pp" aria-label="Play or pause"></button>
+  <button class="ib" id="m-next" aria-label="Next song"><svg viewBox="0 0 24 24"><path d="M4 5.5v13l9-6.5zm9 0v13l9-6.5z"/></svg></button>
+</div>
+
+<nav>
+  <button class="on" data-p="home"><svg viewBox="0 0 24 24"><path d="M12 3 3 10.5V21h6v-6h6v6h6V10.5z"/></svg>Home</button>
+  <button data-p="search"><svg viewBox="0 0 24 24"><path d="M10 3a7 7 0 1 0 4.2 12.6l4.6 4.6 1.4-1.4-4.6-4.6A7 7 0 0 0 10 3zm0 2a5 5 0 1 1 0 10 5 5 0 0 1 0-10z"/></svg>Search</button>
+  <button data-p="queue"><svg viewBox="0 0 24 24"><path d="M3 5h14v2H3zm0 6h14v2H3zm0 6h9v2H3zm13-3v7l6-3.5z"/></svg>Up Next</button>
+</nav>
+
+<div id="np" aria-hidden="true">
+  <div class="bg"></div>
+  <button class="grab" id="np-close" aria-label="Close player"><i></i></button>
+  <div class="cover"><img id="n-img" alt=""></div>
+  <div class="meta"><div class="t"><b id="n-title"></b><span id="n-artist"></span></div>
+    <button class="ib" id="like" aria-label="Favourite"></button></div>
+  <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Position">
+  <div class="times"><span id="cur">0:00</span><span id="dur">0:00</span></div>
+  <div class="ctl">
+    <button class="ib" id="prev" aria-label="Previous song"><svg viewBox="0 0 24 24"><path d="M20 5.5v13l-9-6.5zm-9 0v13L2 12z"/></svg></button>
+    <button class="ib" id="pp" aria-label="Play or pause"></button>
+    <button class="ib" id="next" aria-label="Next song"><svg viewBox="0 0 24 24"><path d="M4 5.5v13l9-6.5zm9 0v13l9-6.5z"/></svg></button>
+  </div>
+  <div id="status"></div>
+</div>
+
+<audio id="audio" preload="auto" playsinline></audio>
+<script>
+const $ = (id) => document.getElementById(id);
+const audio = $('audio');
+const ICON = {
+  play: '<svg viewBox="0 0 24 24"><path d="M7 4.5v15l13-7.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24"><path d="M6 4.5h4.5v15H6zm7.5 0H18v15h-4.5z"/></svg>',
+  wait: '<svg class="spin" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9h-2.2A6.8 6.8 0 1 1 12 5.2z"/></svg>',
+  heart: '<svg viewBox="0 0 24 24"><path d="M12 21s-8.5-5.3-8.5-11.2A4.8 4.8 0 0 1 12 6.6a4.8 4.8 0 0 1 8.5 3.2C20.5 15.7 12 21 12 21z"/></svg>',
+  heartO: '<svg viewBox="0 0 24 24"><path d="M12 21s-8.5-5.3-8.5-11.2A4.8 4.8 0 0 1 12 6.6a4.8 4.8 0 0 1 8.5 3.2C20.5 15.7 12 21 12 21zm0-2.400c2.300-1.600 6.500-5.200 6.500-8.800a2.800 2.800 0 0 0-5.300-1.300L12 10.300l-1.200-1.800a2.800 2.800 0 0 0-5.300 1.300c0 3.600 4.200 7.200 6.500 8.800z" fill-rule="evenodd"/></svg>',
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const thumb = (s) => s.thumb || `https://i.ytimg.com/vi/${s.id}/mqdefault.jpg`;
+const artist = (s) => (Array.isArray(s.artists) ? s.artists.join(', ') : s.artists || '');
+const fmt = (t) => (isFinite(t) ? `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}` : '0:00');
+const api = async (path, body) => {
+  const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || `Error ${r.status}`);
+  return j;
+};
+
+let queue = [], pos = -1, likes = new Map(), loading = false, extending = false, fails = 0;
+const cur = () => queue[pos];
+const trackOf = (s) => ({ id: s.id, title: s.title, artists: Array.isArray(s.artists) ? s.artists : [artist(s)].filter(Boolean), album: s.album || null, duration: s.duration || 0 });
+const sendEvent = (type, s, listenedMs) => s && api('/events', { events: [{ type, track: trackOf(s), ts: Date.now(), listenedMs: Math.round(listenedMs || 0) }] }).catch(() => {});
+
+function rows(el, songs, onTap, emptyText) {
+  if (!songs.length) { el.innerHTML = `<p class="muted">${emptyText || 'Nothing here yet.'}</p>`; return; }
+  el.innerHTML = songs.map((s, i) => `<button class="row${cur() && s.id === cur().id ? ' now' : ''}" data-i="${i}">
+    <img loading="lazy" src="${esc(thumb(s))}" alt=""><div class="t"><b>${esc(s.title)}</b><span>${esc(artist(s))}</span></div></button>`).join('');
+  el.querySelectorAll('.row').forEach((b) => (b.onclick = () => onTap(+b.dataset.i)));
+}
+
+function playList(songs, i) { queue = songs.slice(); pos = i; start(); }
+
+function start() {
+  const s = cur(); if (!s) return;
+  loading = true; $('status').textContent = '';
+  audio.src = `/audio/${s.id}`;
+  audio.play().catch(() => {});
+  paint(); renderQueue(); maybeExtend();
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({ title: s.title, artist: artist(s), album: s.album || '',
+      artwork: [{ src: thumb(s).replace('mqdefault', 'hqdefault'), sizes: '480x480' }] });
+  }
+}
+
+function leave(finished) {
+  const s = cur(); if (!s || loading) return;
+  const t = audio.currentTime || 0, d = audio.duration || s.duration || 0;
+  if (finished || (d && t / d > 0.8)) sendEvent('complete', s, t * 1000);
+  else if (t > 2) sendEvent('skip', s, t * 1000);
+}
+function next(finished) { leave(finished); if (pos < queue.length - 1) { pos++; start(); } else maybeExtend(true); }
+function prev() { if (audio.currentTime > 4 || pos <= 0) { audio.currentTime = 0; return; } leave(false); pos--; start(); }
+
+// Smart continue: when the list is almost over, ask YouTube Music what fits and let the AI pick the best.
+async function maybeExtend(playAfter) {
+  if (extending || !cur() || queue.length - pos > 3) return;
+  extending = true;
+  try {
+    const have = new Set(queue.map((s) => s.id));
+    const cands = (await api(`/api/upnext?id=${cur().id}`)).songs.filter((s) => !have.has(s.id));
+    let picked = cands.slice(0, 10);
+    try {
+      const r = await api('/rank', { candidates: cands.map(trackOf), recent: queue.slice(-10).map((s) => s.id), count: 10 });
+      const byId = new Map(cands.map((s) => [s.id, s]));
+      const ranked = (r.ids || []).map((id) => byId.get(id)).filter(Boolean);
+      if (ranked.length) picked = ranked;
+    } catch {}
+    queue.push(...picked); renderQueue();
+    if (playAfter && pos < queue.length - 1) { pos++; start(); }
+  } catch {} finally { extending = false; }
+}
+
+function paint() {
+  const s = cur(); if (!s) return;
+  const playing = !audio.paused && !loading;
+  $('mini').classList.add('on');
+  $('m-img').src = $('n-img').src = thumb(s);
+  document.querySelector('#np .bg').style.backgroundImage = `url("${thumb(s)}")`;
+  $('m-title').textContent = s.title; $('n-title').textContent = s.title; $('n-artist').textContent = artist(s);
+  $('pp').innerHTML = $('m-pp').innerHTML = loading ? ICON.wait : playing ? ICON.pause : ICON.play;
+  $('np').classList.toggle('playing', playing);
+  const on = likes.has(s.id);
+  $('like').innerHTML = on ? ICON.heart : ICON.heartO; $('like').classList.toggle('on', on);
+}
+function renderQueue() {
+  rows($('queue'), queue.slice(pos < 0 ? 0 : pos), (i) => { leave(false); pos += i; start(); }, 'Play a song. When it ends, the AI keeps going with songs that fit.');
+}
+
+audio.onplaying = () => { loading = false; fails = 0; $('status').textContent = ''; paint(); };
+audio.onpause = paint;
+audio.onwaiting = () => { if (loading) $('status').textContent = 'Getting the song ready…'; };
+audio.onended = () => next(true);
+audio.onerror = async () => {
+  if (!cur() || !audio.src) return;
+  loading = false; fails++;
+  let why = 'This song could not be loaded.';
+  try { const d = await api('/api/diag'); if (d.last_error && d.last_error.id === cur().id) why = 'YouTube refused this song.'; } catch { why = 'The server is not reachable.'; }
+  $('status').textContent = why + (fails < 3 ? ' Skipping…' : '');
+  paint();
+  if (fails < 3) setTimeout(() => next(false), 1200);
+};
+audio.ontimeupdate = () => {
+  const d = audio.duration || (cur() && cur().duration) || 0;
+  if (!seeking) { $('seek').value = d ? (audio.currentTime / d) * 1000 : 0; $('seek').style.setProperty('--p', `${$('seek').value / 10}%`); }
+  $('cur').textContent = fmt(audio.currentTime); $('dur').textContent = fmt(d);
+};
+let seeking = false;
+$('seek').oninput = () => { seeking = true; $('seek').style.setProperty('--p', `${$('seek').value / 10}%`); };
+$('seek').onchange = () => { const d = audio.duration || 0; if (d) audio.currentTime = ($('seek').value / 1000) * d; seeking = false; };
+
+const toggle = () => { if (!cur()) return; if (audio.paused) audio.play().catch(() => {}); else audio.pause(); };
+$('pp').onclick = toggle; $('m-pp').onclick = (e) => { e.stopPropagation(); toggle(); };
+$('next').onclick = () => next(false); $('m-next').onclick = (e) => { e.stopPropagation(); next(false); };
+$('prev').onclick = prev;
+$('mini').onclick = () => { $('np').classList.add('on'); $('np').setAttribute('aria-hidden', 'false'); };
+const closeNp = () => { $('np').classList.remove('on'); $('np').setAttribute('aria-hidden', 'true'); $('np').style.transform = ''; };
+$('np-close').onclick = closeNp;
+// Drag the player down to close it (follows the finger, springs back if you let go early).
+let dragY = null;
+$('np').addEventListener('touchstart', (e) => { if (e.target.id !== 'seek') dragY = e.touches[0].clientY; }, { passive: true });
+$('np').addEventListener('touchmove', (e) => { if (dragY === null) return; const dy = e.touches[0].clientY - dragY;
+  $('np').style.transition = 'none'; $('np').style.transform = `translateY(${dy > 0 ? dy : dy / 6}px)`; }, { passive: true });
+$('np').addEventListener('touchend', (e) => { if (dragY === null) return; const dy = e.changedTouches[0].clientY - dragY; dragY = null;
+  $('np').style.transition = ''; if (dy > 110) closeNp(); else $('np').style.transform = ''; });
+
+$('like').onclick = () => {
+  const s = cur(); if (!s) return;
+  if (likes.has(s.id)) { likes.delete(s.id); sendEvent('unlike', s); } else { likes.set(s.id, { ...s, likedAt: Date.now() }); sendEvent('like', s); }
+  if (navigator.vibrate) navigator.vibrate(8);
+  paint(); renderLiked();
+};
+if ('mediaSession' in navigator) {
+  const ms = navigator.mediaSession;
+  ms.setActionHandler('play', () => audio.play()); ms.setActionHandler('pause', () => audio.pause());
+  ms.setActionHandler('nexttrack', () => next(false)); ms.setActionHandler('previoustrack', prev);
+  try { ms.setActionHandler('seekto', (e) => { audio.currentTime = e.seekTime; }); } catch {}
+}
+
+// pages
+document.querySelectorAll('nav button').forEach((b) => (b.onclick = () => {
+  document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.page').forEach((p) => p.classList.toggle('on', p.id === `p-${b.dataset.p}`));
+  document.querySelector('main').scrollTop = 0;
+  if (b.dataset.p === 'search') $('q').focus();
+}));
+
+// search
+let searchTimer, searchSeq = 0;
+$('q').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(doSearch, 350); };
+$('q').onkeydown = (e) => { if (e.key === 'Enter') { clearTimeout(searchTimer); doSearch(); $('q').blur(); } };
+async function doSearch() {
+  const q = $('q').value.trim(), seq = ++searchSeq;
+  if (!q) { $('results').innerHTML = '<p class="muted">Type a song or an artist.</p>'; return; }
+  try {
+    const { songs } = await api(`/api/search?q=${encodeURIComponent(q)}`);
+    if (seq === searchSeq) rows($('results'), songs, (i) => playList([songs[i]], 0), 'No songs found.');
+  } catch (e) { if (seq === searchSeq) $('results').innerHTML = `<p class="muted">Search did not work: ${esc(e.message)}</p>`; }
+}
+
+// home
+function renderLiked() {
+  const list = [...likes.values()].sort((a, b) => (b.likedAt || 0) - (a.likedAt || 0));
+  if (!list.length) { $('liked').innerHTML = '<div class="empty">Tap the heart on a song you love. Your favourites show up here, and the AI learns from them.</div>'; return; }
+  rows($('liked'), list, (i) => playList(list, i));
+}
+async function loadLikes() {
+  try { const r = await api('/likes'); likes = new Map((r.likes || []).map((s) => [s.id, s])); } catch {}
+  renderLiked(); paint();
+}
+async function loadMixes(train) {
+  const el = $('mixes');
+  try {
+    if (train) { $('refresh').textContent = 'Refreshing…'; await api('/train', {}).catch(() => {}); }
+    const r = await api('/mixes');
+    if (!r.ready) { el.innerHTML = `<div class="empty">Your mixes appear once the AI knows your taste: ${r.likedSongs || 0} of ${r.needed || 10} songs so far. Just listen and tap the heart.</div>`; return; }
+    el.innerHTML = '<div class="mixes">' + r.mixes.map((m, i) => `<button class="mix" data-i="${i}"><div class="art">${m.songs.slice(0, 4).map((s) => `<img loading="lazy" src="${esc(thumb(s))}" alt="">`).join('')}</div><b>${esc(m.name)}</b><span>${m.songs.length} songs</span></button>`).join('') + '</div>';
+    el.querySelectorAll('.mix').forEach((b) => (b.onclick = () => playList(r.mixes[+b.dataset.i].songs, 0)));
+  } catch { el.innerHTML = '<div class="empty">The server is not reachable right now.</div>'; }
+  finally { $('refresh').textContent = 'Refresh'; }
+}
+$('refresh').onclick = () => loadMixes(true);
+$('pp').innerHTML = $('m-pp').innerHTML = ICON.play; $('like').innerHTML = ICON.heartO;
+loadLikes(); loadMixes(false);
+</script>
+</body>
+</html>

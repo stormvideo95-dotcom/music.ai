@@ -22,6 +22,12 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+try:
+    import web  # the iPhone web app (search, audio, smart cache); optional
+except Exception as _exc:  # pragma: no cover
+    web = None
+    print(f"[web] web app disabled: {_exc}", flush=True)
+
 DATA_DIR = os.environ.get("DATA_DIR", "/data")
 PORT = int(os.environ.get("PORT", "8765"))
 HALF_LIFE_DAYS = float(os.environ.get("HALF_LIFE_DAYS", "14"))
@@ -592,6 +598,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path, _, query = self.path.partition("?")
         params = dict(p.split("=", 1) for p in query.split("&") if "=" in p)
+        if web is not None and web.handle_get(self, path, params):
+            return
         if path == "/pair/status":
             self._send(200, pair_status(params.get("pairId", "")))
             return
@@ -689,6 +697,8 @@ def main():
     train()
     threading.Thread(target=nightly_loop, daemon=True).start()
     print(f"Music AI taste server on port {PORT}", flush=True)
+    if web is not None:
+        web.start_background()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 

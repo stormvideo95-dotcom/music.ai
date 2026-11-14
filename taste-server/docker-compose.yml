@@ -1,4 +1,5 @@
 services:
+  # Storm's taste AI (phone + Mac apps)
   music-ai-taste:
     build: .
     container_name: music-ai-taste
@@ -10,3 +11,26 @@ services:
     environment:
       - TZ=Europe/Brussels
       - HALF_LIFE_DAYS=14
+      - POT_URL=http://music-ai-token:4416
+
+  # Dad's own taste AI + the iPhone web app (open http://<pi>:8766 on the iPhone)
+  music-ai-dad:
+    build: .
+    container_name: music-ai-dad
+    restart: unless-stopped
+    ports:
+      - "8766:8765"
+    volumes:
+      - ./data-dad:/data
+    environment:
+      - TZ=Europe/Brussels
+      - HALF_LIFE_DAYS=14
+      - POT_URL=http://music-ai-token:4416
+      - CACHE_MAX_MB=2048
+      - FAVOURITE_PLAYS=3
+
+  # Makes the security token YouTube asks for before it gives a full song
+  music-ai-token:
+    image: brainicism/bgutil-ytdlp-pot-provider:latest
+    container_name: music-ai-token
+    restart: unless-stopped
