@@ -282,29 +282,77 @@ function registerStreamProtocol() {
     }
     const id = decodeURIComponent(url.pathname.replace(/^\//, ''));
     if (url.hostname !== 'stream' || !id) return new Response('not found', { status: 404 });
-    const headers = {};
-    const range = request.headers.get('range');
-    if (range) headers.Range = range;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // YouTube refuses one big download ("bytes=0-") but allows small pieces, so the song is fetched in
+    // 1 MB pieces and handed to the player as one continuous stream.
+    const CHUNK = 1024 * 1024;
+    const m = /bytes=(\d+)-(\d*)/.exec(request.headers.get('range') ?? '');
+    const start = m ? Number(m[1]) : 0;
+    const reqEnd = m && m[2] !== '' ? Number(m[2]) : null;
+    const piece = (url, from, to) => fetch(url, { headers: { Range: `bytes=${from}-${to}` } });
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
         const s = await yt.resolveStream(id);
-        // Same network stack as the one that asked YouTube for this link (links are tied to the IP address
-        // that requested them; Chromium's own fetch can go out over a different one, e.g. IPv6 vs IPv4).
-        const res = await fetch(s.url, { headers });
-        if (res.status >= 400) yt.notePlaybackError(`upstream ${res.status} via ${s.client}`);
-        if (res.status === 403 || res.status === 410) {
+        const firstEnd = reqEnd === null ? start + CHUNK - 1 : Math.min(reqEnd, start + CHUNK - 1);
+        const first = await piece(s.url, start, firstEnd);
+        if (first.status === 416) return new Response(null, { status: 416 });
+        if (!first.ok) {
+          yt.notePlaybackError(`upstream ${first.status} via ${s.client} at byte ${start}`);
           yt.forgetStream(id, true);
           continue;
         }
-        const out = new Headers();
-        for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
-          const v = res.headers.get(h);
-          if (v) out.set(h, v);
+        const total = Number(first.headers.get('content-range')?.split('/')[1]) || 0;
+        if (!total) {
+          // No size information: pass this answer through as it is.
+          return new Response(first.body, {
+            status: first.status,
+            headers: { 'content-type': first.headers.get('content-type') ?? s.mime?.split(';')[0] ?? 'audio/webm' },
+          });
         }
-        if (!out.has('content-type') && s.mime) out.set('content-type', s.mime.split(';')[0]);
-        return new Response(res.body, { status: res.status, headers: out });
+        const end = reqEnd === null ? total - 1 : Math.min(reqEnd, total - 1);
+        let pos = start;
+        let reader = first.body.getReader();
+        const body = new ReadableStream({
+          async pull(controller) {
+            try {
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (!done) {
+                  pos += value.byteLength;
+                  controller.enqueue(value);
+                  return;
+                }
+                if (pos > end) {
+                  controller.close();
+                  return;
+                }
+                const next = await piece(s.url, pos, Math.min(pos + CHUNK - 1, end));
+                if (!next.ok) {
+                  yt.notePlaybackError(`upstream ${next.status} via ${s.client} at byte ${pos}`);
+                  controller.error(new Error(`upstream ${next.status}`));
+                  return;
+                }
+                reader = next.body.getReader();
+              }
+            } catch (err) {
+              controller.error(err);
+            }
+          },
+          cancel() {
+            reader.cancel().catch(() => {});
+          },
+        });
+        return new Response(body, {
+          status: m ? 206 : 200,
+          headers: {
+            'content-type': first.headers.get('content-type') ?? s.mime?.split(';')[0] ?? 'audio/webm',
+            'accept-ranges': 'bytes',
+            'content-length': String(end - start + 1),
+            ...(m ? { 'content-range': `bytes ${start}-${end}/${total}` } : {}),
+          },
+        });
       } catch (err) {
         console.error('[stream]', id, err);
+        yt.notePlaybackError(`stream error: ${String(err?.message ?? err).slice(0, 80)}`);
         yt.forgetStream(id);
       }
     }
