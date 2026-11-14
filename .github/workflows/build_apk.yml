@@ -9,6 +9,7 @@ on:
       - "taste-server/**"
       - "mac-app/**"
       - "mac-native/**"
+      - "assets/musicai/**"
 
 permissions:
   contents: write
