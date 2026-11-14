@@ -303,6 +303,8 @@ function renderPlayState() {
   $('#p-play-icon').textContent = audio.paused ? 'play_arrow' : 'pause';
   $('#p-play').classList.toggle('playing', !audio.paused);
   $('#np-art-wrap').classList.toggle('playing', !audio.paused);
+  $('#np-play-icon').textContent = audio.paused ? 'play_arrow' : 'pause';
+  $('#np-play').classList.toggle('playing', !audio.paused);
   if (!audio.paused) startWave();
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
 }
@@ -311,6 +313,8 @@ function renderLike() {
   const liked = player.current && player.liked.has(player.current.id);
   $('#p-like').innerHTML = ms('favorite', Boolean(liked));
   $('#p-like').classList.toggle('on', Boolean(liked));
+  $('#np-like').classList.toggle('on', Boolean(liked));
+  $('#np-like').lastElementChild.textContent = liked ? 'Liked' : 'Like';
 }
 
 function renderNowPlaying() {
@@ -324,6 +328,8 @@ function renderNowPlaying() {
   $('#np-bg').style.backgroundImage = `url("${art}")`;
   $('#np-title').textContent = t.title;
   $('#np-artist').textContent = t.subtitle || '';
+  lyrics.load(t);
+  if (!$('#np-upnext').classList.contains('hidden')) renderNpUpNext();
   document.title = `${t.title} · Music AI`;
   renderLike();
   applyAccent(art);
@@ -396,6 +402,7 @@ function applyScheme(sourceArgb) {
 function applyAccent(src) {
   if (!src) return;
   const img = new Image();
+  img.crossOrigin = 'anonymous';
   img.onload = () => {
     try {
       const c = document.createElement('canvas');
@@ -436,9 +443,13 @@ let wavePhase = 0;
 let waveRunning = false;
 function drawWave() {
   const amp = audio.paused ? 0 : 4;
+  const d0 = audio.duration || 0;
+  const end = d0 ? (audio.currentTime / d0) * 600 : 0;
   let d = '';
-  for (let x = 0; x <= 600; x += 6) {
-    const y = 12 + amp * Math.sin((x / 600) * Math.PI * 2 * 14 + wavePhase);
+  for (let x = 0; x <= 600; x += 4) {
+    // Fade the wave in at the start and out at the playhead so it meets the track smoothly.
+    const taper = Math.max(0, Math.min(1, x / 30, (end - x) / 30));
+    const y = 12 + amp * taper * Math.sin((x / 600) * Math.PI * 2 * 14 + wavePhase);
     d += `${x ? 'L' : 'M'}${x},${y.toFixed(2)}`;
   }
   $('#np-wave-path').setAttribute('d', d);
@@ -462,6 +473,134 @@ $('#np-wave').addEventListener('click', (e) => {
   const rect = e.currentTarget.getBoundingClientRect();
   const d = audio.duration || 0;
   if (d) audio.currentTime = ((e.clientX - rect.left) / rect.width) * d;
+});
+
+// ----- Now Playing controls -----
+$('#np-play').onclick = () => player.toggle();
+$('#np-prev').onclick = () => player.prev();
+$('#np-next').onclick = () => player.next();
+$('#np-shuffle').onclick = () => player.shuffleRest();
+$('#np-repeat').onclick = () => {
+  player.repeat = !player.repeat;
+  $('#p-repeat').classList.toggle('on', player.repeat);
+  $('#np-repeat').classList.toggle('on', player.repeat);
+};
+$('#np-like').onclick = () => player.toggleLike();
+$('#np-devices').onclick = (e) => $('#p-devices').onclick(e);
+$('#np-queue').onclick = () => {
+  const show = $('#np-upnext').classList.contains('hidden');
+  $('#np-upnext').classList.toggle('hidden', !show);
+  $('#np-lyrics').classList.add('hidden');
+  $('#np-queue').classList.toggle('on', show);
+  $('#np-lyrics-btn').classList.remove('on');
+  if (show) renderNpUpNext();
+  updatePanelState();
+};
+function updatePanelState() {
+  const open = !$('#np-lyrics').classList.contains('hidden') || !$('#np-upnext').classList.contains('hidden');
+  document.querySelector('.np-right').classList.toggle('panel-open', open);
+}
+$('#np-lyrics-btn').onclick = () => {
+  const show = $('#np-lyrics').classList.contains('hidden');
+  $('#np-lyrics').classList.toggle('hidden', !show);
+  $('#np-upnext').classList.add('hidden');
+  $('#np-lyrics-btn').classList.toggle('on', show);
+  $('#np-queue').classList.remove('on');
+  updatePanelState();
+  if (show) lyrics.render();
+};
+
+function renderNpUpNext() {
+  const box = $('#np-upnext');
+  const upcoming = player.queue.slice(player.index + 1, player.index + 30);
+  box.innerHTML = upcoming.length
+    ? upcoming
+        .map(
+          (t, i) => `<div class="track" data-qi="${player.index + 1 + i}"><img src="${esc(thumbOf(t))}" alt="" loading="lazy" />
+          <div><div class="ellipsis t1">${esc(t.title)}</div><div class="ellipsis muted" style="font-size:13px">${esc(t.subtitle)}</div></div></div>`,
+        )
+        .join('')
+    : '<div class="empty" style="padding:16px">Nothing queued. Smart continue will add songs soon.</div>';
+  box.querySelectorAll('[data-qi]').forEach((row) => (row.onclick = () => player.load(Number(row.dataset.qi))));
+}
+
+// ----- Lyrics (synced when available) -----
+const lyrics = {
+  trackId: null,
+  data: null,
+  activeIndex: -1,
+  async load(track) {
+    if (this.trackId === track.id) return;
+    this.trackId = track.id;
+    this.data = null;
+    this.activeIndex = -1;
+    this.render();
+    try {
+      const data = await api.invoke('lyrics:get', {
+        id: track.id,
+        title: track.title,
+        artists: track.artists?.length ? track.artists : [track.subtitle].filter(Boolean),
+        subtitle: track.subtitle,
+        duration: track.duration || audio.duration || 0,
+      });
+      if (this.trackId !== track.id) return;
+      this.data = data;
+    } catch {
+      this.data = { synced: null, plain: null };
+    }
+    this.render();
+  },
+  render() {
+    const box = $('#np-lyrics');
+    if (box.classList.contains('hidden')) return;
+    const d = this.data;
+    if (!d) {
+      box.innerHTML = '<div class="loader" style="margin:40px auto"></div>';
+      return;
+    }
+    if (d.synced?.length) {
+      box.innerHTML =
+        '<div class="lyrics-pad"></div>' +
+        d.synced.map((l, i) => `<div class="line" data-li="${i}">${esc(l.text) || '♪'}</div>`).join('') +
+        `<div class="source">Lyrics: ${esc(d.source)}${d.adjusted ? ' · timing stretched to this version' : ''}</div><div class="lyrics-pad"></div>`;
+      box.querySelectorAll('[data-li]').forEach((el) => {
+        el.onclick = () => {
+          audio.currentTime = d.synced[Number(el.dataset.li)].t;
+          if (audio.paused) void audio.play();
+        };
+      });
+      this.activeIndex = -1;
+      this.tick();
+    } else if (d.plain) {
+      box.innerHTML = `<div class="plain">${esc(d.plain)}</div><div class="source">Lyrics: ${esc(d.source)}</div>`;
+    } else {
+      box.innerHTML = '<div class="empty" style="padding:24px 0">No lyrics found for this song.</div>';
+    }
+  },
+  tick() {
+    const d = this.data;
+    const box = $('#np-lyrics');
+    if (!d?.synced?.length || box.classList.contains('hidden') || $('#nowplaying').classList.contains('hidden')) return;
+    const t = audio.currentTime + 0.25;
+    let idx = -1;
+    for (let i = 0; i < d.synced.length; i++) {
+      if (d.synced[i].t <= t) idx = i;
+      else break;
+    }
+    if (idx === this.activeIndex) return;
+    this.activeIndex = idx;
+    box.querySelectorAll('.line').forEach((el, i) => {
+      el.classList.toggle('active', i === idx);
+      el.classList.toggle('past', i < idx);
+    });
+    const active = box.querySelector('.line.active');
+    if (active) box.scrollTop = active.offsetTop - box.clientHeight / 2 + active.clientHeight / 2;
+  },
+};
+audio.addEventListener('timeupdate', () => lyrics.tick());
+audio.addEventListener('seeked', () => {
+  lyrics.activeIndex = -2;
+  lyrics.tick();
 });
 
 // ======================================================================

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from 'electron';
 
 import { Pi, defaultDeviceName } from './pi.js';
+import { getLyrics } from './lyrics.js';
 import * as yt from './yt.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -129,6 +130,7 @@ function registerIpc() {
   ipcMain.handle('yt:upnext', safe((id) => yt.upNext(id)));
   ipcMain.handle('yt:like', safe((id, liked) => yt.like(id, liked)));
   ipcMain.handle('yt:diagnose', safe(() => yt.diagnose()));
+  ipcMain.handle('lyrics:get', safe((track) => getLyrics(track)));
   ipcMain.handle(
     'yt:stream',
     safe(async (id, refresh) => {
@@ -195,7 +197,10 @@ function registerStreamProtocol() {
         const res = await net.fetch(target.href);
         return new Response(res.body, {
           status: res.status,
-          headers: { 'content-type': res.headers.get('content-type') ?? 'image/jpeg' },
+          headers: {
+            'content-type': res.headers.get('content-type') ?? 'image/jpeg',
+            'access-control-allow-origin': '*',
+          },
         });
       } catch {
         return new Response('bad image', { status: 400 });

@@ -1075,18 +1075,16 @@ h2 {
 /* ---------- now playing (hero moment) ---------- */
 #nowplaying {
   position: fixed;
-  inset: 0 0 var(--player-h) 0;
-  z-index: 30;
-  display: grid;
-  place-items: center;
+  inset: 0;
+  z-index: 45;
   overflow: hidden;
   background: var(--md-surface-container-lowest);
-  animation: rise 0.45s var(--ease-decel);
+  animation: rise 0.5s var(--ease-decel);
 }
 
 @keyframes rise {
   from {
-    transform: translateY(40px);
+    transform: translateY(60px) scale(0.98);
     opacity: 0;
   }
 }
@@ -1100,40 +1098,67 @@ h2 {
 
 .np-bg {
   position: absolute;
-  inset: -120px;
+  inset: -160px;
   background-size: cover;
   background-position: center;
-  filter: blur(100px) saturate(1.5) brightness(0.45);
-  transform: scale(1.1);
+  filter: blur(120px) saturate(1.6) brightness(0.55);
+  transform: scale(1.15);
+  animation: drift 30s ease-in-out infinite alternate;
+}
+
+@keyframes drift {
+  to {
+    transform: scale(1.3) rotate(8deg) translate(40px, -30px);
+  }
+}
+
+/* dynamic-color glow on top of the blurred cover */
+.np-tint {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 70% at 15% 30%, color-mix(in srgb, var(--md-primary) 28%, transparent), transparent 70%),
+    radial-gradient(50% 60% at 85% 80%, color-mix(in srgb, var(--md-tertiary) 22%, transparent), transparent 70%),
+    linear-gradient(to bottom, transparent 40%, color-mix(in srgb, var(--md-surface-container-lowest) 70%, transparent));
 }
 
 .np-close {
   position: absolute !important;
-  top: 44px;
+  top: 40px;
   right: 32px;
-  width: 48px !important;
-  height: 48px !important;
-  background: var(--md-surface-container-high) !important;
+  width: 52px !important;
+  height: 52px !important;
+  background: color-mix(in srgb, var(--md-surface-container-highest) 70%, transparent) !important;
   color: var(--md-on-surface) !important;
   -webkit-app-region: no-drag;
-  z-index: 2;
+  z-index: 3;
+  backdrop-filter: blur(20px);
 }
 
-.np-content {
+.np-layout {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  z-index: 2;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 520px);
   align-items: center;
-  gap: 24px;
-  width: min(80vw, 640px);
+  gap: clamp(32px, 6vw, 96px);
+  padding: 72px clamp(32px, 6vw, 96px) 56px;
+}
+
+.np-left {
+  display: grid;
+  place-items: center;
 }
 
 .np-art-wrap {
-  width: min(48vh, 440px);
-  height: min(48vh, 440px);
+  width: min(62vh, 44vw, 600px);
+  aspect-ratio: 1;
   clip-path: url(#cookie-big);
-  animation: spin 40s linear infinite;
+  animation: spin 50s linear infinite;
   animation-play-state: paused;
+  filter: drop-shadow(0 30px 60px rgba(0, 0, 0, 0.5));
+  transition: transform 0.6s var(--ease-spring);
 }
 
 .np-art-wrap.playing {
@@ -1151,7 +1176,7 @@ h2 {
   height: 100%;
   object-fit: cover;
   display: block;
-  animation: spin 40s linear infinite reverse;
+  animation: spin 50s linear infinite reverse;
   animation-play-state: paused;
 }
 
@@ -1159,37 +1184,66 @@ h2 {
   animation-play-state: running;
 }
 
-.np-meta {
-  text-align: center;
+.np-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  max-height: calc(100vh - 128px);
+}
+
+.np-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  height: 32px;
+  padding: 0 14px 0 10px;
+  border-radius: var(--shape-full);
+  background: color-mix(in srgb, var(--md-primary-container) 80%, transparent);
+  color: var(--md-on-primary-container);
+  font-size: 13px;
+  font-weight: 650;
+  margin-bottom: 10px;
+}
+
+.np-label .ms {
+  font-size: 18px;
 }
 
 #np-title {
-  font-size: 36px;
-  line-height: 44px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
+  font-size: clamp(32px, 3.4vw, 52px);
+  line-height: 1.08;
+  font-weight: 750;
+  letter-spacing: -0.8px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 #np-artist {
-  font-size: 18px;
-  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 500;
+  color: var(--md-primary);
+  margin-bottom: 18px;
 }
 
 /* expressive wavy progress */
 .np-wave {
   width: 100%;
-  height: 24px;
+  height: 28px;
   cursor: pointer;
 }
 
 .np-wave svg {
   width: 100%;
-  height: 24px;
+  height: 28px;
   overflow: visible;
 }
 
 .np-track {
-  stroke: var(--md-secondary-container);
+  stroke: color-mix(in srgb, var(--md-on-surface) 22%, transparent);
   stroke-width: 6;
   stroke-linecap: round;
 }
@@ -1199,6 +1253,7 @@ h2 {
   stroke: var(--md-primary);
   stroke-width: 6;
   stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .np-times {
@@ -1208,7 +1263,217 @@ h2 {
   font-size: 13px;
   color: var(--md-on-surface-variant);
   font-variant-numeric: tabular-nums;
-  margin-top: -10px;
+}
+
+/* connected button group */
+.np-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 18px 0 8px;
+}
+
+.np-small {
+  width: 48px !important;
+  height: 48px !important;
+  color: var(--md-on-surface) !important;
+}
+
+.np-skip,
+.np-play {
+  display: grid;
+  place-items: center;
+  border: none;
+  cursor: pointer;
+  transition: border-radius 0.45s var(--ease-spring), width 0.45s var(--ease-spring), transform 0.2s var(--ease-spring), filter 0.15s;
+}
+
+.np-skip {
+  width: 76px;
+  height: 76px;
+  border-radius: var(--shape-xl);
+  background: color-mix(in srgb, var(--md-secondary-container) 90%, transparent);
+  color: var(--md-on-secondary-container);
+}
+
+.np-skip:hover {
+  border-radius: 50%;
+}
+
+.np-skip .ms {
+  font-size: 34px;
+}
+
+.np-play {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--md-primary) 35%, transparent);
+}
+
+.np-play.playing {
+  width: 132px;
+  border-radius: var(--shape-xl-inc);
+}
+
+.np-play .ms {
+  font-size: 48px;
+}
+
+.np-skip:active,
+.np-play:active {
+  transform: scale(0.93);
+}
+
+.np-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.np-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px 0 14px;
+  border-radius: var(--shape-full);
+  border: 1px solid color-mix(in srgb, var(--md-on-surface) 18%, transparent);
+  background: color-mix(in srgb, var(--md-surface-container-high) 55%, transparent);
+  color: var(--md-on-surface);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(16px);
+  transition: background 0.2s, border-radius 0.3s var(--ease-spring);
+}
+
+.np-pill:hover {
+  background: color-mix(in srgb, var(--md-surface-container-highest) 75%, transparent);
+}
+
+.np-pill:active {
+  border-radius: var(--shape-m);
+}
+
+.np-pill.on {
+  background: var(--md-primary-container);
+  color: var(--md-on-primary-container);
+  border-color: transparent;
+}
+
+.np-pill.on .ms {
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
+}
+
+.np-upnext {
+  margin-top: 10px;
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: 46vh;
+  overflow-y: auto;
+  border-radius: var(--shape-xl);
+  background: color-mix(in srgb, var(--md-surface-container) 70%, transparent);
+  backdrop-filter: blur(20px);
+  padding: 8px;
+}
+
+.np-upnext .track {
+  grid-template-columns: 48px 1fr;
+  min-height: 56px;
+}
+
+/* compact controls when lyrics / up next are open */
+.np-right.panel-open .np-controls {
+  margin: 6px 0 2px;
+}
+
+.np-right.panel-open .np-play {
+  width: 84px;
+  height: 84px;
+}
+
+.np-right.panel-open .np-play.playing {
+  width: 108px;
+}
+
+.np-right.panel-open .np-skip {
+  width: 64px;
+  height: 64px;
+}
+
+.np-right.panel-open #np-title {
+  font-size: clamp(26px, 2.6vw, 38px);
+}
+
+.np-right.panel-open .np-label {
+  display: none;
+}
+
+/* lyrics */
+.np-lyrics {
+  position: relative;
+  margin-top: 10px;
+  flex: 1 1 auto;
+  min-height: 140px;
+  max-height: 46vh;
+  overflow-y: auto;
+  border-radius: var(--shape-xl);
+  background: color-mix(in srgb, var(--md-surface-container) 60%, transparent);
+  backdrop-filter: blur(20px);
+  padding: 22px 24px;
+  scroll-behavior: smooth;
+  mask-image: linear-gradient(to bottom, transparent, #000 14%, #000 86%, transparent);
+  scrollbar-width: none;
+}
+
+.np-lyrics::-webkit-scrollbar {
+  display: none;
+}
+
+.np-lyrics .line {
+  font-size: 22px;
+  line-height: 1.35;
+  font-weight: 700;
+  padding: 6px 0;
+  color: color-mix(in srgb, var(--md-on-surface) 38%, transparent);
+  cursor: pointer;
+  transition: color 0.3s var(--ease-standard), transform 0.4s var(--ease-spring);
+  transform-origin: left center;
+}
+
+.np-lyrics .line:hover {
+  color: color-mix(in srgb, var(--md-on-surface) 70%, transparent);
+}
+
+.np-lyrics .line.active {
+  color: var(--md-on-surface);
+  transform: scale(1.04);
+}
+
+.np-lyrics .line.past {
+  color: color-mix(in srgb, var(--md-on-surface) 55%, transparent);
+}
+
+.np-lyrics .plain {
+  white-space: pre-wrap;
+  font-size: 17px;
+  line-height: 1.6;
+  font-weight: 500;
+  user-select: text;
+}
+
+.np-lyrics .source {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--md-on-surface-variant);
+}
+
+.lyrics-pad {
+  height: 40%;
 }
 
 /* ---------- snackbar ---------- */

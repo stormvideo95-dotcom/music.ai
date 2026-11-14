@@ -82,24 +82,43 @@
 
       <section id="nowplaying" class="hidden">
         <div class="np-bg" id="np-bg"></div>
+        <div class="np-tint"></div>
         <div class="drag-strip np-drag"></div>
         <button class="icon-btn np-close" id="np-close" title="Close"><span class="ms">keyboard_arrow_down</span></button>
-        <div class="np-content">
-          <div class="np-art-wrap" id="np-art-wrap"><img id="np-art" alt="" /></div>
-          <div class="np-meta">
+        <div class="np-layout">
+          <div class="np-left">
+            <div class="np-art-wrap" id="np-art-wrap"><img id="np-art" alt="" /></div>
+          </div>
+          <div class="np-right">
+            <div class="np-label"><span class="ms fill">graphic_eq</span><span id="np-from">Now playing</span></div>
             <div id="np-title"></div>
-            <div id="np-artist" class="muted"></div>
+            <div id="np-artist"></div>
+            <div class="np-wave" id="np-wave" title="Seek">
+              <svg viewBox="0 0 600 24" preserveAspectRatio="none">
+                <defs>
+                  <clipPath id="np-clip"><rect id="np-clip-rect" x="0" y="0" width="0" height="24" /></clipPath>
+                </defs>
+                <line x1="0" y1="12" x2="600" y2="12" class="np-track" />
+                <g clip-path="url(#np-clip)"><path id="np-wave-path" class="np-active" d="" /></g>
+              </svg>
+            </div>
+            <div class="np-times"><span id="np-time">0:00</span><span id="np-dur">0:00</span></div>
+            <div class="np-controls">
+              <button class="icon-btn np-small" id="np-shuffle" title="Shuffle"><span class="ms">shuffle</span></button>
+              <button class="np-skip" id="np-prev" title="Previous"><span class="ms fill">skip_previous</span></button>
+              <button class="np-play" id="np-play" title="Play"><span class="ms fill" id="np-play-icon">play_arrow</span></button>
+              <button class="np-skip" id="np-next" title="Next"><span class="ms fill">skip_next</span></button>
+              <button class="icon-btn np-small" id="np-repeat" title="Repeat"><span class="ms">repeat</span></button>
+            </div>
+            <div class="np-actions">
+              <button class="np-pill" id="np-like"><span class="ms">favorite</span><span>Like</span></button>
+              <button class="np-pill" id="np-devices"><span class="ms">devices</span><span>Play on</span></button>
+              <button class="np-pill" id="np-lyrics-btn"><span class="ms">lyrics</span><span>Lyrics</span></button>
+              <button class="np-pill" id="np-queue"><span class="ms">queue_music</span><span>Up next</span></button>
+            </div>
+            <div class="np-lyrics hidden" id="np-lyrics"></div>
+            <div class="np-upnext hidden" id="np-upnext"></div>
           </div>
-          <div class="np-wave" id="np-wave" title="Seek">
-            <svg viewBox="0 0 600 24" preserveAspectRatio="none">
-              <defs>
-                <clipPath id="np-clip"><rect id="np-clip-rect" x="0" y="0" width="0" height="24" /></clipPath>
-              </defs>
-              <line x1="0" y1="12" x2="600" y2="12" class="np-track" />
-              <g clip-path="url(#np-clip)"><path id="np-wave-path" class="np-active" d="" /></g>
-            </svg>
-          </div>
-          <div class="np-times"><span id="np-time">0:00</span><span id="np-dur">0:00</span></div>
         </div>
       </section>
 

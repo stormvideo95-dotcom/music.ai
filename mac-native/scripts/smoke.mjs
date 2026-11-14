@@ -1,5 +1,6 @@
 // CI smoke test: runs on GitHub (which can reach YouTube) before packaging.
 import * as yt from '../src/yt.js';
+import { getLyrics } from '../src/lyrics.js';
 
 const log = (...a) => console.log('[smoke]', ...a);
 let failed = false;
@@ -41,5 +42,14 @@ if (song) {
     return `client=${s.client} mime=${s.mime}`;
   });
 }
+await check('lyrics (LRCLIB synced)', async () => {
+  const l = await getLyrics({ id: 'x1', title: 'Get Lucky', artists: ['Daft Punk'], duration: 248 });
+  if (!l.synced?.length && !l.plain) throw new Error('none');
+  return `${l.synced?.length ?? 0} synced lines, source=${l.source}, first="${l.synced?.[5]?.text ?? ''}"`;
+});
+await check('lyrics (slowed version)', async () => {
+  const l = await getLyrics({ id: 'x2', title: 'GOZALO (Super Slowed)', artists: ['Ariis'], duration: 127 });
+  return `${l.synced?.length ?? 0} synced, plain=${Boolean(l.plain)}, adjusted=${l.adjusted ?? false}`;
+});
 console.log('SMOKE_RESULT', failed ? 'FAILED' : 'PASSED');
 process.exit(failed ? 1 : 0);
