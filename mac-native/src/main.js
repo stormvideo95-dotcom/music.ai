@@ -3,9 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { app, BrowserWindow, ipcMain, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, net, protocol, session, shell, WebContentsView } from 'electron';
 
 import { Pi, defaultDeviceName } from './pi.js';
+import { PLAYER_PAGE_SCRIPT } from './player-page.js';
 import { getLyrics } from './lyrics.js';
 import * as yt from './yt.js';
 
@@ -387,7 +388,7 @@ function registerStreamProtocol() {
 }
 
 // ---------- hidden player: YouTube Music's own player, invisible, driven by the app ----------
-let playerWin = null;
+let playerView = null;
 let hpWant = { id: null, pos: 0, playing: true, volume: 0.8 };
 let hpWatchdog = null;
 let hpStarted = false;
@@ -424,79 +425,88 @@ function setupPlayerSession() {
     .catch(() => {});
 }
 
-function ensurePlayerWin() {
-  if (playerWin && !playerWin.isDestroyed()) return playerWin;
-  playerWin = new BrowserWindow({
-    show: false,
-    width: 900,
-    height: 700,
-    webPreferences: {
-      partition: YT_PARTITION,
-      preload: path.join(__dirname, 'player-preload.cjs'),
-      contextIsolation: false,
-      sandbox: false,
-      nodeIntegration: false,
-      backgroundThrottling: false,
-    },
+// The player lives inside the main window as an (out of sight) child view, so to YouTube it is a
+// normal visible page.
+function ensurePlayerView() {
+  if (playerView && !playerView.webContents.isDestroyed()) return playerView;
+  if (!win) return null;
+  playerView = new WebContentsView({
+    webPreferences: { partition: YT_PARTITION, contextIsolation: true, sandbox: true, backgroundThrottling: false },
   });
-  playerWin.webContents.setAudioMuted(false);
-  playerWin.webContents.on('dom-ready', () => {
+  win.contentView.addChildView(playerView);
+  const place = () => {
+    if (!win || !playerView) return;
+    const [, h] = win.getContentSize();
+    playerView.setBounds({ x: 0, y: h + 50, width: 960, height: 640 });
+  };
+  place();
+  win.on('resize', place);
+  const wc = playerView.webContents;
+  wc.setAudioMuted(false);
+  wc.on('dom-ready', async () => {
+    await wc.executeJavaScript(PLAYER_PAGE_SCRIPT).catch(() => {});
     const w = hpWant;
-    if (!w.id) return;
-    playerWin.webContents
-      .executeJavaScript(`window.__musicai && window.__musicai.adopt(${JSON.stringify(w.id)}, ${Number(w.pos) || 0}, ${Boolean(w.playing)}, ${Number(w.volume)})`)
-      .catch(() => {});
+    if (w.id) {
+      await wc
+        .executeJavaScript(`window.__musicai.adopt(${JSON.stringify(w.id)}, ${Number(w.pos) || 0}, ${Boolean(w.playing)}, ${Number(w.volume)})`)
+        .catch(() => {});
+    }
   });
-  playerWin.webContents.on('did-fail-load', (_e, code, desc, _url, isMainFrame) => {
+  wc.on('did-fail-load', (_e, code, desc, _url, isMainFrame) => {
     if (isMainFrame && code !== -3) {
       yt.notePlaybackError(`player page failed: ${desc}`);
       send('hp:event', 'error');
     }
   });
-  playerWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  playerWin.on('closed', () => {
-    playerWin = null;
-  });
-  return playerWin;
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  return playerView;
 }
 
 const hpRun = (code) =>
-  playerWin && !playerWin.isDestroyed() ? playerWin.webContents.executeJavaScript(code).catch(() => null) : Promise.resolve(null);
+  playerView && !playerView.webContents.isDestroyed()
+    ? playerView.webContents.executeJavaScript(code).catch(() => null)
+    : Promise.resolve(null);
 
 async function hpLoad(id, pos = 0) {
-  const w = ensurePlayerWin();
+  const view = ensurePlayerView();
+  if (!view) return false;
+  const wc = view.webContents;
   hpWant = { ...hpWant, id, pos, playing: true };
   hpStarted = false;
   clearTimeout(hpWatchdog);
   hpWatchdog = setTimeout(() => {
     if (!hpStarted && hpWant.id === id) {
-      yt.notePlaybackError(`player did not start ${id} within 20s (page: ${w.webContents.getURL().slice(0, 80)})`);
+      yt.notePlaybackError(`player did not start ${id} within 20s (page: ${wc.getURL().slice(0, 80)})`);
       send('hp:event', 'error');
     }
   }, 20_000);
-  const onPage = /^https:\/\/music\.youtube\.com\//.test(w.webContents.getURL());
+  const onPage = /^https:\/\/music\.youtube\.com\//.test(wc.getURL());
   const switched = onPage
     ? await hpRun(`window.__musicai ? window.__musicai.load(${JSON.stringify(id)}, ${Number(pos) || 0}, ${Number(hpWant.volume)}) : false`)
     : false;
-  if (!switched) {
-    await w.loadURL(`https://music.youtube.com/watch?v=${encodeURIComponent(id)}`).catch(() => {});
-  }
+  if (!switched) await wc.loadURL(`https://music.youtube.com/watch?v=${encodeURIComponent(id)}`).catch(() => {});
   return true;
 }
 
 function registerHiddenPlayerIpc() {
-  ipcMain.on('hp:state', (event, state) => {
-    if (!playerWin || event.sender !== playerWin.webContents) return;
-    if (state?.id === hpWant.id && state.t > 0.2) {
-      hpStarted = true;
-      clearTimeout(hpWatchdog);
+  // Ask the player page 4 times a second what it is doing.
+  setInterval(async () => {
+    if (!hpWant.id) return;
+    const res = await hpRun('window.__musicai ? window.__musicai.poll() : null');
+    if (!res) return;
+    for (const name of res.events ?? []) {
+      if (name.startsWith('stall:')) yt.notePlaybackError(`player stalled ${name.slice(6)}`);
+      else send('hp:event', name);
     }
-    send('hp:state', state);
-  });
-  ipcMain.on('hp:event', (event, name) => {
-    if (!playerWin || event.sender !== playerWin.webContents) return;
-    send('hp:event', name);
-  });
+    const state = res.state;
+    if (state) {
+      if (state.id === hpWant.id && state.t > 0.2) {
+        hpStarted = true;
+        clearTimeout(hpWatchdog);
+      }
+      send('hp:state', state);
+    }
+  }, 250);
   ipcMain.handle('hp:load', safe((id, pos) => hpLoad(String(id), Number(pos) || 0)));
   ipcMain.handle(
     'hp:cmd',
@@ -545,8 +555,13 @@ function createWindow() {
   });
   win.on('closed', () => {
     win = null;
-    hpWant.playing = false;
-    void hpRun('window.__musicai && window.__musicai.pause()');
+    try {
+      playerView?.webContents.close();
+    } catch {
+      /* already gone */
+    }
+    playerView = null;
+    hpWant = { ...hpWant, id: null, playing: false };
   });
 }
 
