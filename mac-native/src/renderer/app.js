@@ -168,7 +168,11 @@ const player = {
     else this.liked.delete(t.id);
     renderLike();
     void api.invoke('pi:event', { type: liked ? 'like' : 'unlike', track: trackForPi(t), ts: Date.now() }).catch(() => {});
-    if (config.loggedIn) void api.invoke('yt:like', t.id, liked).catch(() => {});
+    if (config.loggedIn) {
+      api.invoke('yt:like', t.id, liked).catch((err) => toast(`YouTube Music didn't save that like: ${err.message}`));
+    } else {
+      toast('Sign in (Settings) to save likes to YouTube Music');
+    }
   },
 
   /** Keep the music going: when 2 songs are left, add songs (ranked by the Pi when Smart continue is on). */
@@ -939,7 +943,10 @@ async function renderSettings() {
     $('#s-diag').textContent = 'Checking…';
     try {
       const r = await api.invoke('yt:diagnose');
-      $('#s-diag').textContent = `Signed in: ${r.signedIn ? 'yes' : 'no'} · Playlists: ${r.library} · Liked songs: ${r.liked}`;
+      const el = $('#s-diag');
+      el.textContent = r;
+      el.style.whiteSpace = 'pre-wrap';
+      el.style.userSelect = 'text';
     } catch (err) {
       $('#s-diag').textContent = `Check failed: ${err.message}`;
     }

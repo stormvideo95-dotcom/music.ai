@@ -424,14 +424,18 @@ export async function upNext(videoId) {
 
 export async function like(videoId, liked) {
   const y = await getYt();
-  if (!y.session.logged_in) return false;
+  if (!y.session.logged_in) throw new Error('not signed in');
+  const endpoint = liked ? '/like/like' : '/like/removelike';
+  // Through YouTube Music first (same place the YouTube Music app saves likes), then plain YouTube.
   try {
-    if (liked) await y.interact.like(videoId);
-    else await y.interact.removeRating(videoId);
-    return true;
-  } catch {
-    return false;
+    const res = await y.actions.execute(endpoint, { client: 'YTMUSIC', target: { videoId } });
+    if (res.success) return true;
+  } catch (err) {
+    console.warn('[like] music endpoint failed', err?.message);
   }
+  if (liked) await y.interact.like(videoId);
+  else await y.interact.removeRating(videoId);
+  return true;
 }
 
 // ---------- audio streams ----------
@@ -524,18 +528,57 @@ export async function debugStreams(videoId) {
 /** Account check shown in Settings, so problems are visible instead of just "empty". */
 export async function diagnose() {
   const y = await getYt();
-  const out = { signedIn: Boolean(y.session.logged_in) };
+  const lines = [];
+  const cookieNames = (ytCookie.match(/(?:^|; )([^=]+)=/g) ?? []).map((c) => c.replace(/^; /, '').replace(/=$/, ''));
+  lines.push(`Signed in: ${y.session.logged_in ? 'yes' : 'no'} · cookies: ${cookieNames.length} · SAPISID: ${cookieNames.includes('SAPISID') ? 'yes' : 'no'} · 1P: ${cookieNames.includes('__Secure-1PAPISID') ? 'yes' : 'no'} · 3P: ${cookieNames.includes('__Secure-3PAPISID') ? 'yes' : 'no'}`);
+
+  const accountName = async (client) => {
+    try {
+      const res = await y.actions.execute('/account/account_menu', client ? { client } : {});
+      let name = null;
+      let handle = null;
+      walk(res.data, (n) => {
+        if (n.accountName && !name) name = runsText(n.accountName);
+        if (n.channelHandle && !handle) handle = runsText(n.channelHandle);
+      });
+      return name ? `${name}${handle ? ` (${handle})` : ''}` : 'not signed in';
+    } catch (e) {
+      return `error: ${e.message.slice(0, 80)}`;
+    }
+  };
+  lines.push(`YouTube Music account: ${await accountName('YTMUSIC')}`);
+  lines.push(`YouTube account: ${await accountName(null)}`);
+
   try {
-    out.library = (await library()).playlists.length;
+    lines.push(`Library playlists: ${(await library()).playlists.map((p) => p.title).join(', ')}`);
   } catch (e) {
-    out.library = `error: ${e.message}`;
+    lines.push(`Library: error ${e.message.slice(0, 80)}`);
   }
-  try {
-    out.liked = (await playlist('LM')).items.length;
-  } catch (e) {
-    out.liked = `error: ${e.message}`;
-  }
-  return out;
+
+  const rawCheck = async (label, browseId) => {
+    try {
+      const res = await y.actions.execute('/browse', { browseId, client: 'YTMUSIC' });
+      const counts = {};
+      walk(res.data, (n) => {
+        for (const k of Object.keys(n)) if (k.endsWith('Renderer')) counts[k] = (counts[k] ?? 0) + 1;
+      });
+      const top = Object.entries(counts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([k, v]) => `${k.replace('Renderer', '')}×${v}`)
+        .join(' ');
+      let alert = null;
+      walk(res.data, (n) => {
+        if (!alert && n.alertRenderer) alert = runsText(n.alertRenderer.text);
+      });
+      lines.push(`${label}: status ${res.status_code} · ${top || 'nothing'}${alert ? ` · says: ${alert}` : ''}`);
+    } catch (e) {
+      lines.push(`${label}: error ${e.message.slice(0, 100)}`);
+    }
+  };
+  await rawCheck('Liked songs (VLLM)', 'VLLM');
+  await rawCheck('Library songs', 'FEmusic_liked_videos');
+  return lines.join('\n');
 }
 
 export function forgetStream(videoId) {
