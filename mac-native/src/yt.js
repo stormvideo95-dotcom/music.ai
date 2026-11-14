@@ -96,7 +96,11 @@ export function mapItem(node) {
   if (!node) return null;
   const type = node.type;
   if (type === 'MusicResponsiveListItem') {
-    const kind = node.item_type;
+    let kind = node.item_type;
+    if ((kind === 'unknown' || kind === 'endpoint') && node.endpoint?.payload?.videoId) {
+      kind = 'song';
+      node.id = node.id ?? node.endpoint.payload.videoId;
+    }
     const thumb = hiRes(bestThumb(node.thumbnail?.contents ?? node.thumbnails), kind === 'song' || kind === 'video' ? node.id : null);
     const artists = (node.artists ?? node.authors ?? []).map((a) => a.name).filter(Boolean);
     return {
@@ -143,6 +147,105 @@ export function mapItem(node) {
 
 const mapList = (nodes) =>
   (nodes ?? []).map(mapItem).filter((it) => it && it.id && it.kind && it.kind !== 'unknown');
+
+
+// ---------- raw parsing (fallback when youtubei.js's parser finds nothing) ----------
+
+const runsText = (t) => (t?.runs ?? []).map((r) => r.text).join('') || t?.simpleText || '';
+
+function walk(node, visit) {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const n of node) walk(n, visit);
+    return;
+  }
+  if (visit(node) === false) return;
+  for (const v of Object.values(node)) walk(v, visit);
+}
+
+function rawSongFromRenderer(r) {
+  const cols = (r.flexColumns ?? []).map((c) => c.musicResponsiveListItemFlexColumnRenderer?.text);
+  const titleRun = cols[0]?.runs?.[0];
+  const videoId =
+    r.playlistItemData?.videoId ??
+    titleRun?.navigationEndpoint?.watchEndpoint?.videoId ??
+    r.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint?.videoId;
+  if (!videoId) return null;
+  const artistRuns = (cols[1]?.runs ?? []).filter((x) => x.navigationEndpoint?.browseEndpoint);
+  const artists = artistRuns.length
+    ? artistRuns.map((x) => x.text)
+    : [runsText(cols[1]).split(' • ')[0]].filter(Boolean);
+  const durationText = runsText(r.fixedColumns?.[0]?.musicResponsiveListItemFixedColumnRenderer?.text);
+  const duration = durationText.split(':').reduce((acc, n) => acc * 60 + (Number(n) || 0), 0);
+  const thumbs = r.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails ?? [];
+  return {
+    kind: 'song',
+    id: videoId,
+    title: runsText(cols[0]),
+    subtitle: artists.join(', '),
+    artists,
+    album: runsText(cols[2]) || null,
+    duration,
+    thumb: hiRes(bestThumb(thumbs), videoId),
+  };
+}
+
+function rawContinuation(data) {
+  let token = null;
+  walk(data, (n) => {
+    if (token) return false;
+    token = n.continuationCommand?.token ?? n.nextContinuationData?.continuation ?? null;
+  });
+  return token;
+}
+
+async function rawPlaylistItems(y, browseId, max = 500) {
+  const items = [];
+  const seen = new Set();
+  const collect = (data) => {
+    walk(data, (n) => {
+      if (n.musicResponsiveListItemRenderer) {
+        const song = rawSongFromRenderer(n.musicResponsiveListItemRenderer);
+        if (song && !seen.has(song.id)) {
+          seen.add(song.id);
+          items.push(song);
+        }
+        return false;
+      }
+    });
+  };
+  let res = await y.actions.execute('/browse', { browseId, client: 'YTMUSIC' });
+  collect(res.data);
+  let token = rawContinuation(res.data);
+  for (let page = 0; token && items.length < max && page < 15; page++) {
+    res = await y.actions.execute('/browse', { continuation: token, client: 'YTMUSIC' });
+    const before = items.length;
+    collect(res.data);
+    token = items.length > before ? rawContinuation(res.data) : null;
+  }
+  return items;
+}
+
+async function rawLibraryPlaylists(y) {
+  const res = await y.actions.execute('/browse', { browseId: 'FEmusic_liked_playlists', client: 'YTMUSIC' });
+  const out = [];
+  walk(res.data, (n) => {
+    const r = n.musicTwoRowItemRenderer;
+    if (!r) return;
+    const browseId = r.navigationEndpoint?.browseEndpoint?.browseId;
+    if (browseId && /^VL/.test(browseId)) {
+      out.push({
+        kind: 'playlist',
+        id: browseId,
+        title: runsText(r.title),
+        subtitle: runsText(r.subtitle),
+        thumb: hiRes(bestThumb(r.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails ?? [])),
+      });
+    }
+    return false;
+  });
+  return out;
+}
 
 // ---------- browse ----------
 
@@ -217,20 +320,32 @@ export async function suggestions(query) {
 
 export async function playlist(id) {
   const y = await getYt();
-  let pl = await y.music.getPlaylist(id);
-  const header = pl.header;
-  const items = mapList(pl.items);
-  let guard = 0;
-  while (pl.has_continuation && items.length < 500 && guard++ < 10) {
-    pl = await pl.getContinuation();
+  let header = null;
+  let pl = null;
+  const items = [];
+  try {
+    pl = await y.music.getPlaylist(id);
+    header = pl.header;
     items.push(...mapList(pl.items));
+    let guard = 0;
+    while (pl.has_continuation && items.length < 500 && guard++ < 10) {
+      pl = await pl.getContinuation();
+      items.push(...mapList(pl.items));
+    }
+  } catch (err) {
+    console.warn('[playlist] parser failed, using raw', err?.message);
+  }
+  let songs = items.filter((i) => i.kind === 'song');
+  if (!songs.length) {
+    // The parser didn't recognise the list (YouTube changes it often): read the raw answer instead.
+    songs = await rawPlaylistItems(y, id.startsWith('VL') ? id : `VL${id}`);
   }
   return {
     id,
     title: text(header?.title) || 'Playlist',
     subtitle: text(header?.subtitle) || text(header?.strapline_text_one) || '',
-    thumb: hiRes(bestThumb(header?.thumbnail?.contents ?? header?.thumbnails ?? pl.background?.contents)),
-    items: items.filter((i) => i.kind === 'song'),
+    thumb: hiRes(bestThumb(header?.thumbnail?.contents ?? header?.thumbnails ?? pl?.background?.contents)),
+    items: songs,
   };
 }
 
@@ -283,6 +398,15 @@ export async function library() {
     if (name) {
       lib = await lib.applyFilter(name);
       playlists = collect(lib);
+    }
+  }
+  if (playlists.length < 2) {
+    try {
+      for (const p of await rawLibraryPlaylists(y)) {
+        if (!playlists.some((x) => x.id === p.id)) playlists.push(p);
+      }
+    } catch (err) {
+      console.warn('[library] raw fallback failed', err);
     }
   }
   if (!playlists.some((p) => p.id === 'LM' || p.id === 'VLLM')) {
@@ -407,7 +531,7 @@ export async function diagnose() {
     out.library = `error: ${e.message}`;
   }
   try {
-    out.liked = (await y.music.getPlaylist('LM')).items?.length ?? 0;
+    out.liked = (await playlist('LM')).items.length;
   } catch (e) {
     out.liked = `error: ${e.message}`;
   }
