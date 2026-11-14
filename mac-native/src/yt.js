@@ -1,7 +1,7 @@
 // YouTube Music engine for Music AI (Mac): search, home, library, playlists and audio streams.
 import crypto from 'node:crypto';
 
-import { Innertube, Platform, UniversalCache } from 'youtubei.js';
+import { Constants, Innertube, Platform, UniversalCache } from 'youtubei.js';
 
 // youtubei.js needs a JS evaluator to decipher stream URLs.
 Platform.shim.eval = async (data, env) => {
@@ -473,18 +473,21 @@ async function tryClient(y, videoId, client) {
   const format = pickAudioFormat(info);
   const url = await format.decipher(y.session.player);
   if (!url) throw new Error('no url');
-  return { url, mime: format.mime_type, itag: format.itag, client, duration: info.basic_info?.duration ?? 0 };
+  // The download has to look like it comes from the same kind of app that asked for the link.
+  const ua = Constants.CLIENTS[client]?.USER_AGENT || y.session.user_agent || '';
+  return { url, ua, mime: format.mime_type, itag: format.itag, client, duration: info.basic_info?.duration ?? 0 };
 }
 
 /** 'full' = start and a later part both load, 'start' = only the start loads, false = nothing. */
-async function urlWorks(url) {
+async function urlWorks(url, ua) {
+  const base = ua ? { 'User-Agent': ua } : {};
   try {
-    const first = await fetch(url, { headers: { Range: 'bytes=0-1023' } });
+    const first = await fetch(url, { headers: { ...base, Range: 'bytes=0-1023' } });
     if (first.status !== 200 && first.status !== 206) return false;
     const total = Number(first.headers.get('content-range')?.split('/')[1]) || 0;
     if (total > 600_000) {
       const at = Math.min(total - 2048, 1_500_000);
-      const later = await fetch(url, { headers: { Range: `bytes=${at}-${at + 1023}` } });
+      const later = await fetch(url, { headers: { ...base, Range: `bytes=${at}-${at + 1023}` } });
       if (later.status !== 200 && later.status !== 206) return 'start';
     }
     return 'full';
@@ -502,9 +505,12 @@ async function getAnonYt() {
 }
 
 export let lastStreamReport = [];
+export let lastFullReport = [];
 export const playbackErrors = [];
 export function notePlaybackError(text) {
-  playbackErrors.push(String(text).slice(0, 200));
+  const line = String(text).slice(0, 200);
+  if (playbackErrors.at(-1) === line) return;
+  playbackErrors.push(line);
   while (playbackErrors.length > 8) playbackErrors.shift();
 }
 
@@ -540,11 +546,12 @@ export async function resolveStream(videoId) {
   for (const { key, y, client } of attempts) {
     try {
       const stream = await tryClient(y, videoId, client);
-      const ok = await urlWorks(stream.url);
+      const ok = await urlWorks(stream.url, stream.ua);
       report.push(`${key}: ${ok || 'stream refused'} (itag ${stream.itag}, ${String(stream.mime).split(';')[0]})`);
       if (ok === 'full') {
         preferredClient = key;
         lastStreamReport = report;
+        if (!bad.size) lastFullReport = report;
         return finish(stream, key);
       }
       if (ok === 'start' && !fallback) fallback = { stream, key };
@@ -554,6 +561,7 @@ export async function resolveStream(videoId) {
     }
   }
   lastStreamReport = report;
+  if (!bad.size) lastFullReport = report;
   if (fallback) return finish(fallback.stream, fallback.key);
   if (signIn && !isLoggedIn()) throw new Error('SIGN_IN_REQUIRED');
   throw new Error('No playable stream');
@@ -642,6 +650,7 @@ export async function diagnose() {
   await rawCheck('Liked songs (VLLM)', 'VLLM');
   await rawCheck('Library songs', 'FEmusic_liked_videos');
   lines.push(`Last song tried: ${lastStreamReport.join(' | ') || 'nothing yet'}`);
+  lines.push(`First try of a song: ${lastFullReport.join(' | ') || 'nothing yet'}`);
   lines.push(`Player errors: ${playbackErrors.join(' | ') || 'none'}`);
   return lines.join('\n');
 }

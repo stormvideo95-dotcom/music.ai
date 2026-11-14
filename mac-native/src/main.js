@@ -296,7 +296,9 @@ function registerStreamProtocol() {
         let s;
         try {
           s = await yt.resolveStream(id);
-          const res = await fetch(s.url, { headers: { Range: `bytes=${from}-${to}` } });
+          const res = await fetch(s.url, {
+            headers: { Range: `bytes=${from}-${to}`, ...(s.ua ? { 'User-Agent': s.ua } : {}) },
+          });
           if (res.status === 416) return { status: 416 };
           if (res.ok) {
             const total = Number(res.headers.get('content-range')?.split('/')[1]) || 0;
@@ -305,6 +307,23 @@ function registerStreamProtocol() {
             return { buf, total, type: res.headers.get('content-type') ?? s.mime?.split(';')[0] ?? 'audio/webm' };
           }
           yt.notePlaybackError(`upstream ${res.status} via ${s.client} at byte ${from}`);
+          // Second way of asking for the same piece (in the link itself instead of a header).
+          const clen = Number(new URL(s.url).searchParams.get('clen')) || 0;
+          const known = expectTotal || clen;
+          if (known) {
+            const alt = await fetch(`${s.url}&range=${from}-${Math.min(to, known - 1)}`, {
+              headers: s.ua ? { 'User-Agent': s.ua } : {},
+            });
+            if (alt.ok) {
+              const buf = new Uint8Array(await alt.arrayBuffer());
+              if (buf.byteLength) {
+                yt.notePlaybackError(`link-range worked via ${s.client}`);
+                return { buf, total: known, type: alt.headers.get('content-type') ?? s.mime?.split(';')[0] ?? 'audio/webm' };
+              }
+            } else {
+              yt.notePlaybackError(`link-range ${alt.status} via ${s.client} at byte ${from}`);
+            }
+          }
           // First a fresh link from the same source; if that is refused too, switch source.
           yt.forgetStream(id, attempt > 0);
         } catch (err) {
