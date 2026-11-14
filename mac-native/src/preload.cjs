@@ -7,7 +7,7 @@ const invoke = async (channel, ...args) => {
   return res.data;
 };
 
-const ALLOWED_EVENTS = ['config', 'pi:status', 'pi:command', 'pi:paired', 'library:changed'];
+const ALLOWED_EVENTS = ['config', 'pi:status', 'pi:command', 'pi:paired', 'library:changed', 'hp:state', 'hp:event'];
 
 contextBridge.exposeInMainWorld('musicai', {
   invoke,

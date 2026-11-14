@@ -2,7 +2,120 @@
 const api = window.musicai;
 const $ = (sel) => document.querySelector(sel);
 const view = $('#view');
-const audio = $('#audio');
+
+// The sound comes from YouTube Music's own player running invisibly in the background (YouTube only
+// gives complete songs to its own player). This object lets the rest of the app treat it like a
+// normal audio element.
+const audio = (() => {
+  const listeners = {};
+  const st = { id: null, t: 0, d: 0, paused: true, gotMeta: false };
+  let wantId = null;
+  let volume = 0.8;
+  const emit = (name) => {
+    for (const l of [...(listeners[name] ?? [])]) {
+      if (l.once) listeners[name] = listeners[name].filter((x) => x !== l);
+      try {
+        l.fn();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+  const cmd = (name, value) => window.musicai.invoke('hp:cmd', name, value).catch(() => {});
+  const a = {
+    ended: false,
+    addEventListener(name, fn, opts) {
+      (listeners[name] ??= []).push({ fn, once: Boolean(opts?.once) });
+    },
+    async loadId(id, positionSec = 0) {
+      wantId = id;
+      a.ended = false;
+      Object.assign(st, { id, t: positionSec || 0, d: 0, paused: false, gotMeta: false });
+      emit('timeupdate');
+      emit('play');
+      await window.musicai.invoke('hp:load', id, positionSec || 0);
+    },
+    get src() {
+      return wantId ?? '';
+    },
+    get currentTime() {
+      return st.t;
+    },
+    set currentTime(v) {
+      st.t = Math.max(0, Number(v) || 0);
+      a.ended = false;
+      void cmd('seek', st.t);
+      emit('timeupdate');
+      emit('seeked');
+    },
+    get duration() {
+      return st.d;
+    },
+    get paused() {
+      return st.paused;
+    },
+    get volume() {
+      return volume;
+    },
+    set volume(v) {
+      volume = Math.max(0, Math.min(1, Number(v) || 0));
+      void cmd('volume', volume);
+    },
+    play() {
+      if (!wantId) return Promise.resolve();
+      if (st.paused) {
+        st.paused = false;
+        emit('play');
+      }
+      return cmd('play');
+    },
+    pause() {
+      if (!st.paused) {
+        st.paused = true;
+        emit('pause');
+      }
+      void cmd('pause');
+    },
+  };
+  let holdUntil = 0; // right after a click, trust the click over a slightly older report from the player
+  const origPlay = a.play;
+  a.play = () => {
+    holdUntil = Date.now() + 1500;
+    return origPlay();
+  };
+  const origPause = a.pause;
+  a.pause = () => {
+    holdUntil = Date.now() + 1500;
+    origPause();
+  };
+  window.musicai.on('hp:state', (s) => {
+    if (!s || s.id !== wantId || a.ended) return;
+    st.t = s.t;
+    if (s.d > 0) st.d = s.d;
+    if (!st.gotMeta && s.d > 0) {
+      st.gotMeta = true;
+      emit('loadedmetadata');
+    }
+    if (Date.now() > holdUntil && s.ready >= 2 && s.paused !== st.paused) {
+      st.paused = s.paused;
+      emit(s.paused ? 'pause' : 'play');
+    }
+    emit('timeupdate');
+  });
+  window.musicai.on('hp:event', (name) => {
+    if (name === 'ended') {
+      a.ended = true;
+      st.paused = true;
+      emit('pause');
+      emit('ended');
+    } else if (name === 'error') emit('error');
+    else if (name === 'next') emit('mk-next');
+    else if (name === 'prev') emit('mk-prev');
+    else if (name === 'mk-play') void a.play();
+    else if (name === 'mk-pause') a.pause();
+  });
+  return a;
+})();
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -74,42 +187,15 @@ const player = {
     renderNowPlaying();
     renderQueue();
     try {
-      const stream = await api.invoke('yt:stream', track.id, false);
+      await audio.loadId(track.id, positionSec);
       if (token !== this.loadToken) return;
-      if (!track.duration && stream.duration) track.duration = stream.duration;
-      audio.src = stream.src;
-      audio.currentTime = 0;
-      if (positionSec > 1) {
-        audio.addEventListener('loadedmetadata', () => (audio.currentTime = positionSec), { once: true });
-      }
-      try {
-        await audio.play();
-      } catch (err) {
-        // A media error: the 'error' handler below retries with another source and skips if needed.
-        if (['AbortError', 'NotSupportedError'].includes(err?.name)) return;
-        throw err;
-      }
     } catch (err) {
       if (token !== this.loadToken) return;
       console.error(err);
-      if (String(err?.message).includes('SIGN_IN_REQUIRED')) {
-        audio.pause();
-        toast('YouTube wants you to sign in first');
-        if (!config.loggedIn) go('settings');
-        return;
-      }
-      this.failStreak = (this.failStreak ?? 0) + 1;
-      if (this.failStreak >= 3) {
-        this.failStreak = 0;
-        toast("Can't play songs right now. Check your internet or sign in.");
-        return;
-      }
-      toast(`Can't play "${track.title}" — skipping`);
-      setTimeout(() => this.next(true), 800);
+      toast(`Can't play "${track.title}"`);
       return;
     }
     this.started = Date.now();
-    this.failStreak = 0;
     this.recent = [...this.recent.filter((id) => id !== track.id), track.id].slice(-50);
     updateMediaSession();
     void sendState();
@@ -227,37 +313,24 @@ const trackForPi = (t) => ({
 audio.addEventListener('ended', () => player.next(true));
 audio.addEventListener('play', renderPlayState);
 audio.addEventListener('pause', renderPlayState);
-const streamRetries = new Map();
-audio.addEventListener('error', async () => {
+audio.addEventListener('error', () => {
   const t = player.current;
-  if (!t || !audio.src) return;
-  void api
-    .invoke('yt:playback-error', `code ${audio.error?.code} ${audio.error?.message ?? ''} at ${Math.round(audio.currentTime)}s`)
-    .catch(() => {});
-  // The stream may have expired or been cut off: try a fresh one (another source) up to 3 times.
-  const tries = streamRetries.get(t.id) ?? 0;
-  if (tries < 3) {
-    streamRetries.set(t.id, tries + 1);
-    const pos = audio.currentTime;
-    try {
-      const s = await api.invoke('yt:stream', t.id, true);
-      if (player.current?.id !== t.id) return;
-      audio.src = `${s.src}?r=${Date.now()}`;
-      audio.addEventListener('loadedmetadata', () => (audio.currentTime = pos), { once: true });
-      await audio.play();
-      if (!player.started) player.started = Date.now();
-      updateMediaSession();
-      void player.maybeExtend();
-      return;
-    } catch (err) {
-      // Another media error fires this handler again (next try); only give up when no stream was found.
-      if (['AbortError', 'NotSupportedError'].includes(err?.name)) return;
-    }
+  if (!t) return;
+  player.failStreak = (player.failStreak ?? 0) + 1;
+  if (player.failStreak >= 3) {
+    player.failStreak = 0;
+    audio.pause();
+    toast("Can't play songs right now. Check your internet, or sign in under Settings.");
+    return;
   }
-  streamRetries.delete(t.id);
-  toast(`Can't play "${t.title}"`);
+  toast(`Can't play "${t.title}" — skipping`);
   player.next(true);
 });
+audio.addEventListener('timeupdate', () => {
+  if (audio.currentTime > 2) player.failStreak = 0;
+});
+audio.addEventListener('mk-next', () => player.next());
+audio.addEventListener('mk-prev', () => player.prev());
 
 const bar = $('#p-bar');
 let seeking = false;

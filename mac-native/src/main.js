@@ -12,6 +12,9 @@ import * as yt from './yt.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const YT_PARTITION = 'persist:youtube';
 
+// The hidden YouTube Music player has to start songs without a click.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'musicai',
@@ -383,6 +386,138 @@ function registerStreamProtocol() {
   });
 }
 
+// ---------- hidden player: YouTube Music's own player, invisible, driven by the app ----------
+let playerWin = null;
+let hpWant = { id: null, pos: 0, playing: true, volume: 0.8 };
+let hpWatchdog = null;
+let hpStarted = false;
+
+function setupPlayerSession() {
+  const ses = session.fromPartition(YT_PARTITION);
+  // Plain Chrome identity: Google treats unknown browsers worse.
+  ses.setUserAgent(ses.getUserAgent().replace(/\s(Electron|music-ai-mac|Music AI)\/\S+/gi, ''));
+  ses.webRequest.onBeforeRequest(
+    {
+      urls: [
+        '*://*.doubleclick.net/*',
+        '*://*.googlesyndication.com/*',
+        '*://*.googleadservices.com/*',
+        '*://*.youtube.com/pagead/*',
+        '*://*.youtube.com/api/stats/ads*',
+        '*://*.youtube.com/ptracking*',
+        '*://*.youtube.com/youtubei/v1/player/ad_break*',
+      ],
+    },
+    (_details, callback) => callback({ cancel: true }),
+  );
+  // Skip the EU cookie-consent wall when not signed in.
+  ses.cookies
+    .set({
+      url: 'https://www.youtube.com',
+      name: 'SOCS',
+      value: 'CAI',
+      domain: '.youtube.com',
+      path: '/',
+      secure: true,
+      expirationDate: Math.floor(Date.now() / 1000) + 365 * 86400,
+    })
+    .catch(() => {});
+}
+
+function ensurePlayerWin() {
+  if (playerWin && !playerWin.isDestroyed()) return playerWin;
+  playerWin = new BrowserWindow({
+    show: false,
+    width: 900,
+    height: 700,
+    webPreferences: {
+      partition: YT_PARTITION,
+      preload: path.join(__dirname, 'player-preload.cjs'),
+      contextIsolation: false,
+      sandbox: false,
+      nodeIntegration: false,
+      backgroundThrottling: false,
+    },
+  });
+  playerWin.webContents.setAudioMuted(false);
+  playerWin.webContents.on('dom-ready', () => {
+    const w = hpWant;
+    if (!w.id) return;
+    playerWin.webContents
+      .executeJavaScript(`window.__musicai && window.__musicai.adopt(${JSON.stringify(w.id)}, ${Number(w.pos) || 0}, ${Boolean(w.playing)}, ${Number(w.volume)})`)
+      .catch(() => {});
+  });
+  playerWin.webContents.on('did-fail-load', (_e, code, desc, _url, isMainFrame) => {
+    if (isMainFrame && code !== -3) {
+      yt.notePlaybackError(`player page failed: ${desc}`);
+      send('hp:event', 'error');
+    }
+  });
+  playerWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  playerWin.on('closed', () => {
+    playerWin = null;
+  });
+  return playerWin;
+}
+
+const hpRun = (code) =>
+  playerWin && !playerWin.isDestroyed() ? playerWin.webContents.executeJavaScript(code).catch(() => null) : Promise.resolve(null);
+
+async function hpLoad(id, pos = 0) {
+  const w = ensurePlayerWin();
+  hpWant = { ...hpWant, id, pos, playing: true };
+  hpStarted = false;
+  clearTimeout(hpWatchdog);
+  hpWatchdog = setTimeout(() => {
+    if (!hpStarted && hpWant.id === id) {
+      yt.notePlaybackError(`player did not start ${id} within 20s (page: ${w.webContents.getURL().slice(0, 80)})`);
+      send('hp:event', 'error');
+    }
+  }, 20_000);
+  const onPage = /^https:\/\/music\.youtube\.com\//.test(w.webContents.getURL());
+  const switched = onPage
+    ? await hpRun(`window.__musicai ? window.__musicai.load(${JSON.stringify(id)}, ${Number(pos) || 0}, ${Number(hpWant.volume)}) : false`)
+    : false;
+  if (!switched) {
+    await w.loadURL(`https://music.youtube.com/watch?v=${encodeURIComponent(id)}`).catch(() => {});
+  }
+  return true;
+}
+
+function registerHiddenPlayerIpc() {
+  ipcMain.on('hp:state', (event, state) => {
+    if (!playerWin || event.sender !== playerWin.webContents) return;
+    if (state?.id === hpWant.id && state.t > 0.2) {
+      hpStarted = true;
+      clearTimeout(hpWatchdog);
+    }
+    send('hp:state', state);
+  });
+  ipcMain.on('hp:event', (event, name) => {
+    if (!playerWin || event.sender !== playerWin.webContents) return;
+    send('hp:event', name);
+  });
+  ipcMain.handle('hp:load', safe((id, pos) => hpLoad(String(id), Number(pos) || 0)));
+  ipcMain.handle(
+    'hp:cmd',
+    safe((name, value) => {
+      if (name === 'play') {
+        hpWant.playing = true;
+        return hpRun('window.__musicai && window.__musicai.play()');
+      }
+      if (name === 'pause') {
+        hpWant.playing = false;
+        return hpRun('window.__musicai && window.__musicai.pause()');
+      }
+      if (name === 'seek') return hpRun(`window.__musicai && window.__musicai.seek(${Number(value) || 0})`);
+      if (name === 'volume') {
+        hpWant.volume = Math.max(0, Math.min(1, Number(value) || 0));
+        return hpRun(`window.__musicai && window.__musicai.volume(${hpWant.volume})`);
+      }
+    }),
+  );
+}
+
 // ---------- window ----------
 function createWindow() {
   win = new BrowserWindow({
@@ -410,6 +545,8 @@ function createWindow() {
   });
   win.on('closed', () => {
     win = null;
+    hpWant.playing = false;
+    void hpRun('window.__musicai && window.__musicai.pause()');
   });
 }
 
@@ -418,6 +555,9 @@ app.whenReady().then(async () => {
   loadLikes();
   registerStreamProtocol();
   registerIpc();
+  setupPlayerSession();
+  registerHiddenPlayerIpc();
+  hpWant.volume = config.volume ?? 0.8;
   createWindow();
   pi.start();
   try {
@@ -426,7 +566,7 @@ app.whenReady().then(async () => {
     console.error('[yt] start failed', err);
   }
   app.on('activate', () => {
-    if (!BrowserWindow.getAllWindows().length) createWindow();
+    if (!win) createWindow();
   });
 });
 
