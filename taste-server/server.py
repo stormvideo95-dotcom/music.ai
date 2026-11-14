@@ -119,7 +119,13 @@ def train():
             counts[f] = counts.get(f, 0.0) + decay
     # Shrink towards 0 so one listen doesn't make a strong opinion.
     weights = {f: sums[f] / (counts[f] + 1.0) for f in sums}
-    clusters = build_clusters(rows, weights)
+    rules = load_instructions()
+    for feature, extra in (rules.get("boost") or {}).items():
+        weights[feature.lower()] = weights.get(feature.lower(), 0.0) + float(extra)
+    if rules.get("playlists"):
+        clusters = build_instruction_playlists(rows, weights, rules["playlists"])
+    else:
+        clusters = build_clusters(rows, weights)
     with model_lock:
         model["weights"] = weights
         model["clusters"] = clusters
@@ -289,6 +295,72 @@ def wait_commands(device_id, timeout):
 
 
 # ---------- Taste groups (AI mixes) ----------
+
+INSTRUCTIONS_PATH = os.environ.get("INSTRUCTIONS", "")
+
+
+def load_instructions():
+    """Owner's instructions (fixed playlists, boosts). Empty when this server has none."""
+    if not INSTRUCTIONS_PATH or not os.path.exists(INSTRUCTIONS_PATH):
+        return {}
+    try:
+        with open(INSTRUCTIONS_PATH) as fh:
+            return json.load(fh)
+    except Exception as exc:
+        print(f"[instructions] ignored, file is broken: {exc}", flush=True)
+        return {}
+
+
+def build_instruction_playlists(rows, weights, rules):
+    """Fixed playlists from the instructions: each liked song lands in exactly one."""
+    songs = {}
+    for etype, tid, title, artists, album, duration, listened, ts in rows:
+        songs[tid] = {"id": tid, "title": title or "", "artists": json.loads(artists or "[]"), "album": album, "duration": duration or 0}
+    liked = [t for t in songs if weights.get(f"song:{t}", 0) > 0.2]
+    liked.sort(key=lambda t: weights[f"song:{t}"], reverse=True)
+    if not liked:
+        return []
+    low = lambda xs: {str(x).lower() for x in xs or []}
+    artists_of = lambda t: {a.lower() for a in songs[t]["artists"]}
+    left, groups = list(liked), []
+    for rule in rules:
+        if rule.get("rest"):
+            groups.append((rule, None))
+            continue
+        kw, yes_a, yes_s = low(rule.get("words")), low(rule.get("artists")), set(rule.get("songs") or [])
+        no_a, no_s = low(rule.get("not_artists")), set(rule.get("not_songs") or [])
+
+        def direct(t):
+            text = " ".join([songs[t]["title"], songs[t]["album"] or ""] + songs[t]["artists"]).lower()
+            return t in yes_s or bool(artists_of(t) & yes_a) or any(k in text for k in kw)
+
+        hit = {t for t in left if direct(t)}
+        # An artist whose liked songs are mostly in this playlist brings the rest of their songs along.
+        per_artist = {}
+        for t in left:
+            for a in artists_of(t):
+                n, m = per_artist.get(a, (0, 0))
+                per_artist[a] = (n + 1, m + (t in hit))
+        mostly = {a for a, (n, m) in per_artist.items() if m and m * 2 >= n}
+        ids = [t for t in left if t not in no_s and not (artists_of(t) & no_a) and (t in hit or artists_of(t) & mostly)]
+        groups.append((rule, ids))
+        taken = set(ids)
+        left = [t for t in left if t not in taken]
+    clusters = []
+    for rule, ids in groups:
+        ids = left if ids is None else ids
+        if not ids:
+            continue
+        artist_count, word_count = {}, {}
+        for t in ids:
+            for a in artists_of(t):
+                artist_count[a] = artist_count.get(a, 0) + 1
+            for w in words(songs[t]["title"]):
+                word_count[w] = word_count.get(w, 0) + 1
+        top_words = sorted(word_count.items(), key=lambda x: x[1], reverse=True)
+        clusters.append({"name": rule.get("name") or "Mix", "ids": ids, "artists": artist_count, "words": dict(top_words[:20]), "songs": [songs[t] for t in ids[:200]]})
+    return clusters
+
 
 def build_clusters(rows, weights):
     """Split the songs you like into 2-4 groups of music you play together."""

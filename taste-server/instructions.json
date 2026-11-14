@@ -1,0 +1,15 @@
+{
+  "_help": "Storm's instructions for the taste AI. Claude edits this file when Storm asks for a change; the Pi reads it after an update.",
+  "playlists": [
+    {
+      "name": "Phonk",
+      "words": ["phonk", "funk", "montagem", "mtg", "automotivo", "slowed", "drift"],
+      "artists": [],
+      "songs": [],
+      "not_artists": [],
+      "not_songs": []
+    },
+    { "name": "Everything else", "rest": true }
+  ],
+  "boost": {}
+}

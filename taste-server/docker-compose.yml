@@ -12,6 +12,7 @@ services:
       - TZ=Europe/Brussels
       - HALF_LIFE_DAYS=14
       - POT_URL=http://music-ai-token:4416
+      - INSTRUCTIONS=/app/instructions.json
 
   # Dad's own taste AI + the iPhone web app (open http://<pi>:8766 on the iPhone)
   music-ai-dad:
