@@ -26,6 +26,12 @@ val CastEnabledKey = "castEnabled"
 val ShowPlayerCastButtonKey = "showPlayerCastButton"
 val ShowPlayerVideoButtonKey = "showPlayerVideoButton"
 
+// Music AI: same keys as the 13.x fork so the Pi address and pairing survive the update.
+val TasteAiEnabledKey = "tasteAiEnabled"
+val TasteAiUrlKey = "tasteAiUrl"
+val TasteAiUrlAwayKey = "tasteAiUrlAway"
+val TasteAiDeviceTokenKey = "tasteAiDeviceToken"
+
 val HiddenHomeItemsJsonKey = "hiddenHomeItemsJson"
 val HiddenLibraryUndoHintShownKey = "hiddenLibraryUndoHintShown"
 val HiddenHomeUndoHintShownKey = "hiddenHomeUndoHintShown"

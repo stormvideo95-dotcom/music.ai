@@ -20,10 +20,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import com.metrolist.android.tasteai.AiMixes
 import com.metrolist.android.tasteai.MusicAi
+import com.metrolist.android.tasteai.MusicAiHttp
+import com.metrolist.android.tasteai.PiAddress
+import com.metrolist.android.tasteai.PiWhere
 import com.metrolist.android.tasteai.PairResult
 import com.metrolist.android.tasteai.PiState
 import com.metrolist.android.tasteai.PiStatusDot
-import com.metrolist.android.tasteai.TasteAiManager
 import com.metrolist.android.tasteai.TasteAiStatus
 import com.metrolist.android.tasteai.piStateLabel
 import com.metrolist.shared.db.MusicDatabase
@@ -49,7 +51,12 @@ import com.metrolist.shared.generated.resources.musicai_pair_this_phone
 import com.metrolist.shared.generated.resources.musicai_pair_this_phone_desc
 import com.metrolist.shared.generated.resources.musicai_pair_wrong_code
 import com.metrolist.shared.generated.resources.musicai_server
+import com.metrolist.shared.generated.resources.musicai_server_away
+import com.metrolist.shared.generated.resources.musicai_server_away_desc
+import com.metrolist.shared.generated.resources.musicai_server_away_hint
 import com.metrolist.shared.generated.resources.musicai_server_hint
+import com.metrolist.shared.generated.resources.musicai_using_away
+import com.metrolist.shared.generated.resources.musicai_using_home
 import com.metrolist.shared.generated.resources.musicai_status
 import com.metrolist.shared.generated.resources.musicai_taste_ai
 import com.metrolist.shared.generated.resources.musicai_test
@@ -83,7 +90,11 @@ private sealed interface TestState {
 fun TasteAiScreen(onNavigateBack: () -> Unit) {
     val settings = Settings.shared
     val enabled = settings.tasteAiEnabled
-    val url = settings.tasteAiUrl
+    val homeUrl = settings.tasteAiUrl
+    val awayUrl = settings.tasteAiUrlAway
+    // Whichever address answered last; the Pi calls below go to that one.
+    val url = if (homeUrl.isBlank() && awayUrl.isBlank()) "" else MusicAiHttp.serverUrl
+    val where by PiAddress.where.collectAsState()
     val paired = settings.tasteAiDeviceToken.isNotBlank()
     val database = koinInject<MusicDatabase>()
     val deviceSync = MusicAi.deviceSync.collectAsState().value
@@ -97,13 +108,13 @@ fun TasteAiScreen(onNavigateBack: () -> Unit) {
     var pairBusy by remember { mutableStateOf(false) }
     var addText by remember { mutableStateOf<String?>(null) }
     var showUrlDialog by remember { mutableStateOf(false) }
+    var showAwayUrlDialog by remember { mutableStateOf(false) }
     var showCodeDialog by remember { mutableStateOf(false) }
 
-    LaunchedEffect(enabled, url) {
+    LaunchedEffect(enabled, homeUrl, awayUrl) {
         while (true) {
             if (enabled && url.isNotBlank()) {
-                val health = TasteAiManager.health(url)
-                TasteAiStatus.set(if (health?.ok == true) PiState.ONLINE else PiState.OFFLINE)
+                TasteAiStatus.set(if (PiAddress.resolve() != null) PiState.ONLINE else PiState.OFFLINE)
             } else {
                 TasteAiStatus.set(PiState.OFF)
             }
@@ -114,7 +125,7 @@ fun TasteAiScreen(onNavigateBack: () -> Unit) {
     if (showUrlDialog) {
         TextInputDialog(
             title = stringResource(Res.string.musicai_server),
-            initial = url.ifBlank { "http://" },
+            initial = homeUrl.ifBlank { "http://" },
             placeholder = stringResource(Res.string.musicai_server_hint),
             keyboardType = KeyboardType.Uri,
             isValid = { it.startsWith("http://") || it.startsWith("https://") },
@@ -124,6 +135,22 @@ fun TasteAiScreen(onNavigateBack: () -> Unit) {
                 showUrlDialog = false
             },
             onDismiss = { showUrlDialog = false },
+        )
+    }
+
+    if (showAwayUrlDialog) {
+        TextInputDialog(
+            title = stringResource(Res.string.musicai_server_away),
+            initial = awayUrl.ifBlank { "http://" },
+            placeholder = stringResource(Res.string.musicai_server_away_hint),
+            keyboardType = KeyboardType.Uri,
+            isValid = { it.isBlank() || it.startsWith("http://") || it.startsWith("https://") },
+            onDone = {
+                settings.tasteAiUrlAway = it.trim().takeUnless { value -> value == "http://" }.orEmpty()
+                testState = TestState.Idle
+                showAwayUrlDialog = false
+            },
+            onDismiss = { showAwayUrlDialog = false },
         )
     }
 
@@ -187,8 +214,13 @@ fun TasteAiScreen(onNavigateBack: () -> Unit) {
                     ),
                     SettingsSubScreenItem(
                         title = stringResource(Res.string.musicai_server),
-                        description = url.ifBlank { stringResource(Res.string.musicai_not_set) },
+                        description = homeUrl.ifBlank { stringResource(Res.string.musicai_not_set) },
                         onClick = { showUrlDialog = true },
+                    ),
+                    SettingsSubScreenItem(
+                        title = stringResource(Res.string.musicai_server_away),
+                        description = awayUrl.ifBlank { stringResource(Res.string.musicai_server_away_desc) },
+                        onClick = { showAwayUrlDialog = true },
                     ),
                     SettingsSubScreenItem(
                         title = stringResource(Res.string.musicai_test),
@@ -197,7 +229,7 @@ fun TasteAiScreen(onNavigateBack: () -> Unit) {
                         onClick = {
                             testState = TestState.Checking
                             scope.launch {
-                                val health = TasteAiManager.health(url)
+                                val health = PiAddress.resolve()
                                 testState = if (health?.ok == true) TestState.Ok(health.events, health.trained) else TestState.Failed
                                 TasteAiStatus.set(if (health?.ok == true) PiState.ONLINE else PiState.OFFLINE)
                             }
@@ -205,7 +237,13 @@ fun TasteAiScreen(onNavigateBack: () -> Unit) {
                     ),
                     SettingsSubScreenItem(
                         title = stringResource(Res.string.musicai_status),
-                        description = piStateLabel(piState),
+                        description =
+                            when {
+                                piState != PiState.ONLINE -> piStateLabel(piState)
+                                where == PiWhere.HOME && awayUrl.isNotBlank() -> stringResource(Res.string.musicai_using_home, piStateLabel(piState))
+                                where == PiWhere.AWAY -> stringResource(Res.string.musicai_using_away, piStateLabel(piState))
+                                else -> piStateLabel(piState)
+                            },
                         trailingContent = { PiStatusDot(piState) },
                     ),
                 ),

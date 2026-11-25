@@ -12,6 +12,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.metrolist.shared.api.lyrics.AiProviderPresets
 import com.metrolist.shared.constants.ActiveLyricsTextPositionKey
+import com.metrolist.shared.constants.TasteAiDeviceTokenKey
+import com.metrolist.shared.constants.TasteAiEnabledKey
+import com.metrolist.shared.constants.TasteAiUrlAwayKey
+import com.metrolist.shared.constants.TasteAiUrlKey
 import com.metrolist.shared.constants.AiSlopBlocklistCacheKey
 import com.metrolist.shared.constants.AiSlopBlocklistUpdatedAtKey
 import com.metrolist.shared.constants.AndroidActiveFontIdKey
@@ -358,10 +362,10 @@ class Settings(
     var showPlayerCastButton by preference(ShowPlayerCastButtonKey, true)
     var showPlayerVideoButton by preference(ShowPlayerVideoButtonKey, true)
 
-    // Music AI: same keys as the 13.x fork so the Pi address and pairing survive the update.
-    var tasteAiEnabled by preference("tasteAiEnabled", false)
-    var tasteAiUrl by preference("tasteAiUrl", "")
-    var tasteAiDeviceToken by preference("tasteAiDeviceToken", "")
+    var tasteAiEnabled by preference(TasteAiEnabledKey, false)
+    var tasteAiUrl by preference(TasteAiUrlKey, "")
+    var tasteAiUrlAway by preference(TasteAiUrlAwayKey, "")
+    var tasteAiDeviceToken by preference(TasteAiDeviceTokenKey, "")
 
     val isPlayerCastButtonVisible: Boolean
         get() = castEnabled && showPlayerCastButton

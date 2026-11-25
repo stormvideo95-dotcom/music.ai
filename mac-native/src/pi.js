@@ -14,14 +14,35 @@ export class Pi {
     this.onCommand = onCommand;
     this.status = 'off';
     this.running = false;
+    this.current = '';
+    this.where = null;
+    this.lastResolveAt = 0;
+  }
+
+  // Home address first, then the away one (for example Tailscale).
+  urls() {
+    const clean = (u) => (u || '').trim().replace(/\/+$/, '');
+    const { serverUrl, awayUrl } = this.getConfig();
+    const list = [
+      { url: clean(serverUrl), where: 'home' },
+      { url: clean(awayUrl), where: 'away' },
+    ].filter((c) => c.url);
+    return list.filter((c, i) => list.findIndex((o) => o.url === c.url) === i);
   }
 
   base() {
-    return (this.getConfig().serverUrl || '').trim().replace(/\/+$/, '');
+    const urls = this.urls();
+    return urls.find((c) => c.url === this.current)?.url ?? urls[0]?.url ?? '';
   }
 
-  async call(path, { method = 'GET', body, auth = false, timeoutMs = 8000 } = {}) {
-    const base = this.base();
+  async call(path, opts = {}) {
+    const res = await this.callAt(this.base(), path, opts);
+    // The address in use stopped answering: look for the other one (at most every 15 s).
+    if (!res && this.urls().length > 1 && Date.now() - this.lastResolveAt > 15_000) void this.checkHealth();
+    return res;
+  }
+
+  async callAt(base, path, { method = 'GET', body, auth = false, timeoutMs = 8000 } = {}) {
     if (!base) return null;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -53,10 +74,24 @@ export class Pi {
   }
 
   async checkHealth() {
-    if (!this.base()) return this.setStatus('off');
-    const res = await this.call('/health', { timeoutMs: 4000 });
-    this.setStatus(res?.data?.ok ? 'online' : 'offline');
-    return res?.data ?? null;
+    const urls = this.urls();
+    if (!urls.length) return this.setStatus('off');
+    this.lastResolveAt = Date.now();
+    for (const { url, where } of urls) {
+      const quick = urls.length > 1 && where === 'home';
+      const res = await this.callAt(url, '/health', { timeoutMs: quick ? 2500 : 4000 });
+      if (res?.data?.ok) {
+        const switched = this.where !== where;
+        this.current = url;
+        this.where = where;
+        this.setStatus('online');
+        if (switched) this.onStatus(this.status);
+        return res.data;
+      }
+    }
+    this.where = null;
+    this.setStatus('offline');
+    return null;
   }
 
   start() {

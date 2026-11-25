@@ -5535,7 +5535,12 @@
     <string name="musicai_taste_ai_overview">Smart continue, AI mixes and Play on with your Pi</string>
     <string name="musicai_enable">Smart continue</string>
     <string name="musicai_enable_desc">When your playlist ends, keep playing songs your own AI thinks you'll like</string>
-    <string name="musicai_server">Taste server address</string>
+    <string name="musicai_server">Pi address at home</string>
+    <string name="musicai_server_away">Pi address away from home</string>
+    <string name="musicai_server_away_desc">Used automatically when the home address doesn't answer, for example your Tailscale address</string>
+    <string name="musicai_server_away_hint">http://100.x.x.x:8765</string>
+    <string name="musicai_using_home">%1$s · using the home address</string>
+    <string name="musicai_using_away">%1$s · using the away address</string>
     <string name="musicai_server_hint">http://umbrel.local:8765</string>
     <string name="musicai_not_set">Not set</string>
     <string name="musicai_test">Test connection</string>

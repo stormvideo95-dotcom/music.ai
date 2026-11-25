@@ -89,7 +89,10 @@ class LikesSync(
             delay(8_000)
             var round = 0
             while (isActive) {
-                runCatching { syncOnce() }.onFailure { Timber.tag(TAG).d("likes sync skipped: ${it.message}") }
+                runCatching { syncOnce() }.onFailure {
+                    Timber.tag(TAG).d("likes sync skipped: ${it.message}")
+                    PiAddress.onRequestFailed()
+                }
                 // Keep the AI mixes on the Playlists page up to date: at app start, then about every 6 hours.
                 if (round % MIXES_EVERY_ROUNDS == 0) {
                     runCatching {

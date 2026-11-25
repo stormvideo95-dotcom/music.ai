@@ -5,10 +5,16 @@
 
 package com.metrolist.android.tasteai
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import com.metrolist.android.playback.MusicService
 import com.metrolist.shared.db.MusicDatabase
 import com.metrolist.shared.model.SongItem
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +24,7 @@ object MusicAi {
     val deviceSync: StateFlow<DeviceSync?> = _deviceSync.asStateFlow()
 
     private var tasteAi: TasteAiManager? = null
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
 
     fun attach(
         service: MusicService,
@@ -60,11 +67,43 @@ object MusicAi {
                 },
             )
         sync.start()
+        watchNetwork(service, scope)
         tasteAi = taste
         _deviceSync.value = sync
     }
 
-    fun detach() {
+    // Wi-Fi <-> mobile data: the home address may have stopped (or started) working.
+    private fun watchNetwork(
+        context: Context,
+        scope: CoroutineScope,
+    ) {
+        val connectivity = context.getSystemService(ConnectivityManager::class.java) ?: return
+        var pending: Job? = null
+        val callback =
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) = recheck()
+
+                override fun onLost(network: Network) = recheck()
+
+                private fun recheck() {
+                    pending?.cancel()
+                    pending =
+                        scope.launch {
+                            delay(3_000)
+                            if (MusicAiHttp.tasteAiActive) {
+                                TasteAiStatus.set(if (PiAddress.resolve() != null) PiState.ONLINE else PiState.OFFLINE)
+                            }
+                        }
+                }
+            }
+        runCatching { connectivity.registerDefaultNetworkCallback(callback) }.onSuccess { networkCallback = callback }
+    }
+
+    fun detach(context: Context) {
+        networkCallback?.let { callback ->
+            runCatching { context.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback) }
+        }
+        networkCallback = null
         tasteAi = null
         _deviceSync.value = null
     }

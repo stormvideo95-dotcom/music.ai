@@ -1162,12 +1162,20 @@ function renderMix(index) {
 // ----- Settings -----
 let pairCode = null;
 async function renderSettings() {
-  const status = piStatus === 'online' ? 'Connected' : piStatus === 'offline' ? "Can't reach the Pi" : 'Not set up';
+  const where = await api.invoke('pi:where').catch(() => null);
+  const status =
+    piStatus === 'online'
+      ? `Connected${where ? ` · using the ${where} address` : ''}`
+      : piStatus === 'offline'
+        ? "Can't reach the Pi"
+        : 'Not set up';
   view.innerHTML = `<h1>Settings</h1>
     <h2>Taste AI (your Pi)</h2>
     <div class="settings-group">
-      <div class="setting"><div class="info"><div class="label">Pi address</div><div class="desc">Usually http://umbrel.local:8765</div></div>
+      <div class="setting"><div class="info"><div class="label">Pi address at home</div><div class="desc">Usually http://umbrel.local:8765</div></div>
         <input type="text" id="s-url" value="${esc(config.serverUrl ?? '')}" /><button class="btn" id="s-url-save">Save</button></div>
+      <div class="setting"><div class="info"><div class="label">Pi address away from home</div><div class="desc">Used automatically when the home address doesn't answer, for example your Tailscale address</div></div>
+        <input type="text" id="s-url-away" placeholder="http://100.x.x.x:8765" value="${esc(config.awayUrl ?? '')}" /><button class="btn" id="s-url-away-save">Save</button></div>
       <div class="setting"><span class="dot" data-status="${piStatus}"></span><div class="info"><div class="label">Pi status</div><div class="desc">${status}</div></div>
         <button class="btn" id="s-test">Test</button></div>
       <div class="setting"><div class="info"><div class="label">Smart continue</div><div class="desc">When the queue ends, your Pi picks songs in the same style</div></div>
@@ -1206,6 +1214,10 @@ async function renderSettings() {
 
   $('#s-url-save').onclick = async () => {
     await api.invoke('config:set', { serverUrl: $('#s-url').value.trim() });
+    toast('Saved');
+  };
+  $('#s-url-away-save').onclick = async () => {
+    await api.invoke('config:set', { awayUrl: $('#s-url-away').value.trim() });
     toast('Saved');
   };
   $('#s-test').onclick = async () => {

@@ -27,6 +27,7 @@ protocol.registerSchemesAsPrivileged([
 const configPath = () => path.join(app.getPath('userData'), 'config.json');
 let config = {
   serverUrl: 'http://umbrel.local:8765',
+  awayUrl: '',
   token: '',
   deviceName: '',
   smartContinue: true,
@@ -47,6 +48,7 @@ const setConfig = async (patch) => {
 };
 const publicConfig = () => ({
   serverUrl: config.serverUrl,
+  awayUrl: config.awayUrl,
   paired: Boolean(config.token),
   deviceName: config.deviceName || defaultDeviceName(),
   smartContinue: config.smartContinue,
@@ -224,7 +226,7 @@ function registerIpc() {
   ipcMain.handle('config:get', safe(() => publicConfig()));
   ipcMain.handle('config:set', safe((patch) => {
     const allowed = {};
-    for (const key of ['serverUrl', 'smartContinue', 'volume', 'deviceName']) {
+    for (const key of ['serverUrl', 'awayUrl', 'smartContinue', 'volume', 'deviceName']) {
       if (key in patch) allowed[key] = patch[key];
     }
     return setConfig(allowed).then(() => pi.checkHealth());
@@ -234,6 +236,7 @@ function registerIpc() {
   }));
 
   ipcMain.handle('pi:status', safe(() => pi.status));
+  ipcMain.handle('pi:where', safe(() => (pi.urls().length > 1 ? pi.where : null)));
   ipcMain.handle('pi:health', safe(() => pi.checkHealth()));
   ipcMain.handle('pi:event', safe((event) => pi.event(event)));
   ipcMain.handle('pi:rank', safe((c, r, n) => pi.rank(c, r, n)));

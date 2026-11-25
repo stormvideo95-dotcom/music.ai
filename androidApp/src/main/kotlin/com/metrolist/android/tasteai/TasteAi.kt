@@ -137,9 +137,58 @@ internal object MusicAiHttp {
 
     fun base(url: String) = url.trim().trimEnd('/')
 
-    val serverUrl: String get() = base(Settings.shared.tasteAiUrl)
+    /** The address that answered last time (home or away), or the first one set. */
+    val serverUrl: String get() = PiAddress.current
 
     val tasteAiActive: Boolean get() = Settings.shared.tasteAiEnabled && serverUrl.isNotBlank()
+}
+
+enum class PiWhere { HOME, AWAY }
+
+/**
+ * Storm's Pi has two addresses: one on the home network and one for away (e.g. Tailscale).
+ * The home one is tried first; when it doesn't answer, the away one is used.
+ */
+object PiAddress {
+    private val home get() = MusicAiHttp.base(Settings.shared.tasteAiUrl)
+    private val away get() = MusicAiHttp.base(Settings.shared.tasteAiUrlAway)
+
+    @Volatile private var chosen = ""
+
+    private val _where = MutableStateFlow<PiWhere?>(null)
+    val where: StateFlow<PiWhere?> = _where.asStateFlow()
+
+    private val lock = Mutex()
+
+    @Volatile private var lastResolveAt = 0L
+
+    val current: String
+        get() = chosen.takeIf { it.isNotBlank() && (it == home || it == away) } ?: home.ifBlank { away }
+
+    /** Checks which address answers and switches to it. Returns its health, or null when neither answers. */
+    suspend fun resolve(): HealthResponse? =
+        lock.withLock {
+            lastResolveAt = System.currentTimeMillis()
+            val candidates = listOf(home to PiWhere.HOME, away to PiWhere.AWAY).filter { it.first.isNotBlank() }.distinctBy { it.first }
+            for ((url, where) in candidates) {
+                val quick = candidates.size > 1 && where == PiWhere.HOME
+                val health = TasteAiManager.health(url, if (quick) 2_500 else 5_000)
+                if (health?.ok == true) {
+                    chosen = url
+                    _where.value = where
+                    return@withLock health
+                }
+            }
+            _where.value = null
+            null
+        }
+
+    /** After a failed request: look again for a working address, at most every 15 seconds. */
+    suspend fun onRequestFailed() {
+        if (away.isBlank() || home.isBlank()) return
+        if (System.currentTimeMillis() - lastResolveAt < 15_000) return
+        resolve()
+    }
 }
 
 fun SongItem.toTasteTrack() =
@@ -170,7 +219,7 @@ class TasteAiManager(
                 TasteAiStatus.set(
                     when {
                         !MusicAiHttp.tasteAiActive -> PiState.OFF
-                        health(MusicAiHttp.serverUrl)?.ok == true -> PiState.ONLINE
+                        PiAddress.resolve() != null -> PiState.ONLINE
                         else -> PiState.OFFLINE
                     },
                 )
@@ -250,6 +299,8 @@ class TasteAiManager(
         }.onFailure {
             TasteAiStatus.set(PiState.OFFLINE)
             Timber.tag(TAG).d("Pi not reachable, keeping ${batch.size} events for later")
+            PiAddress.onRequestFailed()
+            if (MusicAiHttp.serverUrl != url) flush()
         }
     }
 
@@ -282,7 +333,7 @@ class TasteAiManager(
         private const val TAG = "TasteAi"
         private const val MAX_PENDING = 1000
         private const val RANK_COUNT = 10
-        private const val STATUS_INTERVAL_MS = 60_000L
+        private const val STATUS_INTERVAL_MS = 30_000L
 
         /** Asks the Pi to retrain now, then returns the AI mixes. */
         suspend fun mixes(url: String): MixesResponse? =
@@ -295,10 +346,13 @@ class TasteAiManager(
                 }.getOrNull()
             }
 
-        suspend fun health(url: String): HealthResponse? =
+        suspend fun health(
+            url: String,
+            timeoutMs: Long = 5_000,
+        ): HealthResponse? =
             withContext(Dispatchers.IO) {
                 runCatching {
-                    val res = MusicAiHttp.client.get("${MusicAiHttp.base(url)}/health")
+                    val res = MusicAiHttp.client.get("${MusicAiHttp.base(url)}/health") { timeout { requestTimeoutMillis = timeoutMs } }
                     if (res.status.isSuccess()) res.body<HealthResponse>() else null
                 }.getOrNull()
             }

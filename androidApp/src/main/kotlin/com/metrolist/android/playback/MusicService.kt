@@ -2918,7 +2918,7 @@ class MusicService :
             return
         }
         playbackBenchmark.cancel()
-        MusicAi.detach()
+        MusicAi.detach(this)
         // A failure while saving state must not leak the session, or the next service fails with a duplicate session ID.
         try {
             releasePlaybackState()

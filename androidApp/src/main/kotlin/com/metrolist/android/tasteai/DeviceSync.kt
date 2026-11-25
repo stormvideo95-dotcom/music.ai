@@ -204,6 +204,7 @@ class DeviceSync(
                         if (res.status.isSuccess()) res.body<CommandsResponse>().commands else null
                     }.getOrNull()
                 if (commands == null) {
+                    PiAddress.onRequestFailed()
                     delay(10_000)
                     continue
                 }
