@@ -37,7 +37,9 @@ jobs:
           distribution: "temurin"
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -92,5 +94,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          touch build.log
           { grep -E "^e: |error:|FAILURE|What went wrong" -A3 build.log | head -150; echo; tail -60 build.log; } > errors.txt || tail -200 build.log > errors.txt
           gh release create "failed-${{ github.run_number }}" --prerelease --title "Build ${{ github.run_number }} failed" --notes-file errors.txt --target "${{ github.sha }}"
