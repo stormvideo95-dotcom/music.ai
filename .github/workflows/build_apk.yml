@@ -3,13 +3,15 @@ name: Build Music AI APK
 on:
   workflow_dispatch:
   push:
-    branches: ["main"]
+    branches: ["main", "v14-port"]
     paths-ignore:
       - "**.md"
       - "taste-server/**"
       - "mac-app/**"
       - "mac-native/**"
       - "assets/musicai/**"
+      - "desktopApp/**"
+      - "iosApp/**"
 
 permissions:
   contents: write
@@ -21,16 +23,21 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Set up JDK 21
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
-          java-version: "21"
+          java-version: "25"
           distribution: "temurin"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -39,18 +46,16 @@ jobs:
         run: |
           chmod +x gradlew
           set -o pipefail
-          ./gradlew --console=plain :app:assembleGmsDebug --warning-mode summary 2>&1 | tee build.log
+          ./gradlew --console=plain --no-scan :androidApp:assembleDebug --warning-mode summary \
+            "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -XX:+UseParallelGC -Dfile.encoding=UTF-8" 2>&1 | tee build.log
         env:
           METROLIST_APPLICATION_ID: com.storm.musicai
           METROLIST_APP_NAME: Music AI
-          METROLIST_BUILD_COMMIT: ${{ github.sha }}
-          GRADLE_OPTS: -Xmx4g
 
       - name: Rename APK
         run: |
-          find app/build/outputs/apk -name "*.apk"
-          APK=$(find app/build/outputs/apk -name "*universal*.apk" | head -n 1)
-          [ -z "$APK" ] && APK=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          find androidApp/build/outputs/apk -name "*.apk"
+          APK=$(find androidApp/build/outputs/apk/debug -name "*.apk" | head -n 1)
           echo "Found $APK"
           mkdir -p out
           cp "$APK" out/MusicAI-build-${{ github.run_number }}.apk
@@ -62,6 +67,7 @@ jobs:
           path: out/*.apk
 
       - name: Publish release (easy phone download)
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
@@ -69,6 +75,17 @@ jobs:
           body: Install this APK on your phone. Same signature every build, so it updates over the old one.
           files: out/*.apk
           make_latest: true
+
+      - name: Publish test prerelease (branch builds)
+        if: github.ref != 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: test-${{ github.ref_name }}-${{ github.run_number }}
+          name: Music AI test build ${{ github.run_number }} (${{ github.ref_name }})
+          body: Test build from the ${{ github.ref_name }} branch. Not the normal update yet.
+          files: out/*.apk
+          prerelease: true
+          make_latest: false
 
       - name: Share build errors (readable without login)
         if: failure()
