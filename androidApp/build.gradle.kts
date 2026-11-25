@@ -285,10 +285,10 @@ android {
     if (persistentDebugKeystoreFile.exists()) {
         signingConfigs {
             create("persistentDebug") {
-                storeFile = persistentDebugKeystoreFile
-                storePassword = "android"
-                keyAlias = "androiddebugkey"
-                keyPassword = "android"
+                this.storeFile = persistentDebugKeystoreFile
+                this.storePassword = "android"
+                this.keyAlias = "androiddebugkey"
+                this.keyPassword = "android"
             }
         }
     }
